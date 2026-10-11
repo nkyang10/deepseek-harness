@@ -87,7 +87,7 @@
   z-index: 1;
   display: flex;
   width: 800px;
-  height: min(800px, calc(100vh - 2 * max(24px, var(--dsh-frame-overlay-top, 24px))));
+  height: min(800px, calc(100dvh - 2 * max(24px, var(--dsh-frame-overlay-top, 24px))));
   max-width: calc(100vw - 48px);
   border-radius: var(--dsw-radius-panel);
   overflow: hidden;
@@ -230,6 +230,46 @@
   min-height: 0;
   padding: 0 24px 24px;
   overflow-y: auto;
+}
+
+/* Phone: the 800px two-pane panel cannot fit a 393px viewport with its fixed
+   188px nav (the detail column would drop to ~157px and wrap every label).
+   The panel goes full-height column and the nav becomes a horizontal chip
+   strip; desktop keeps the figma row layout untouched. */
+@media (max-width: 640px) {
+  .panel {
+    flex-direction: column;
+    max-width: calc(100vw - 24px);
+    height: min(800px, calc(100dvh - 24px));
+  }
+
+  .nav {
+    flex: none;
+    flex-direction: row;
+    align-items: center;
+    gap: 8px;
+    width: auto;
+    padding: 12px 12px 0;
+  }
+
+  .navList {
+    flex-direction: row;
+    gap: 6px;
+    overflow-x: auto;
+    overflow-y: hidden;
+    padding-bottom: 4px;
+  }
+
+  .navCell {
+    flex: none;
+    height: 36px;
+    padding: 8px 12px;
+    white-space: nowrap;
+  }
+
+  .options {
+    padding: 0 16px 16px;
+  }
 }
 
 /* Visually-hidden text seat (close button accessible name from slot content). */

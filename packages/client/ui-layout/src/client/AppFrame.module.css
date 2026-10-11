@@ -288,3 +288,90 @@
 .overlayLayer > * {
   pointer-events: auto;
 }
+
+/*
+ * Phone drawer: below the mobile breakpoint an expanded sidebar overlays the
+ * frame instead of reserving a track (AppFrame passes no sidebar track and
+ * flags data-mobile-drawer). The column leaves the grid flow, keeps its fill
+ * and hairline, and gains elevation so it reads as a surface over the
+ * conversation; the scrim paints under it and dismisses on click. Both sit
+ * above the shell overlay layer (z 20); body-portalled menus and dialogs
+ * stack above the drawer.
+ */
+.frame[data-mobile-drawer] .sidebarCol {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  z-index: 30;
+  overflow: visible;
+  box-shadow: var(--dsw-elevation-panel);
+  animation: drawer-in var(--ds-transition-duration-slow) var(--ds-ease-in-out);
+}
+
+@keyframes drawer-in {
+  from { transform: translateX(-100%); }
+}
+
+.drawerScrim {
+  position: absolute;
+  inset: 0;
+  z-index: 29;
+  background: var(--dsw-alias-bg-mask-1);
+  animation: scrim-in var(--ds-transition-duration-slow) var(--ds-ease-in-out);
+}
+
+@keyframes scrim-in {
+  from { opacity: 0; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .frame[data-mobile-drawer] .sidebarCol,
+  .drawerScrim {
+    animation: none;
+  }
+}
+
+/* The absolute sidebar column leaves grid auto-placement, so the center and
+   right columns would each slide one track to the left (the center into the
+   drawer's 0px track). Pin them to their tracks while the drawer is open. */
+.frame[data-mobile-drawer] .centerCol {
+  grid-column: 2;
+}
+
+.frame[data-mobile-drawer] .rightbarCol {
+  grid-column: 3;
+}
+
+/*
+ * Phone reopen strip: the collapsed mobile sidebar is a 5px column (columns.ts
+ * MOBILE_COLLAPSED_WIDTH) painted by .sidebarCol's fill and hairline. The
+ * handle is its tap/swipe target; the hit area is wider than the painted strip
+ * and the chevron overhangs the strip edge. Sits at drag-handle elevation,
+ * under the drawer (30) and the overlay layer (20).
+ */
+.drawerHandle {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  width: 20px;
+  z-index: 11;
+  display: flex;
+  align-items: center;
+  padding: 0;
+  border: none;
+  background: none;
+  cursor: pointer;
+  touch-action: none;
+  color: var(--dsw-alias-label-secondary);
+}
+
+.drawerHandle:hover,
+.drawerHandle:active {
+  color: var(--dsw-alias-label-primary);
+}
+
+.drawerHandle > svg {
+  margin-left: 1px;
+}

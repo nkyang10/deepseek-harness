@@ -334,6 +334,15 @@
   background: var(--dsw-alias-interactive-bg-hover);
 }
 
+/* Coarse pointers: grow the rail and strip icon buttons toward touch target
+   sizes; precise pointers keep the figma sizes untouched. */
+@media (pointer: coarse) {
+  .iconButton {
+    width: 36px;
+    height: 36px;
+  }
+}
+
 /* The toggle is flush with .logoRow, which clips its own overflow, so an outward ring loses
    the pixels that leave the row. Draw this control's ring inside its own box instead. */
 .iconButton.toggle:focus-visible {

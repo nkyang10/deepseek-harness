@@ -33,6 +33,7 @@ export const en = {
   'collapse': 'Collapse',
   'expand': 'Expand',
   'back': 'Back',
+  'sidebar.expand': 'Expand sidebar',
   'brand.localBuild': 'DSH Local Build',
   'workspace.defaultName': 'Default workspace',
   'unknown': 'Unknown',

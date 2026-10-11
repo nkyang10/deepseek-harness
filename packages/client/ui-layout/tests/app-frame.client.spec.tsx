@@ -318,7 +318,7 @@ describe('AppFrame normal width concessions', () => {
     expect(instance.getSnapshot().layoutInfo).toMatchObject({ rightbarShown: true, rightbar: 864 })
     act(() => { instance.actions.closeRightbar() })
     resize(455)
-    expect(tracks(frame)).toEqual([56, 0])
+    expect(tracks(frame)).toEqual([5, 0])
     resize(1920)
     expect(tracks(frame)).toEqual([420, 0])
   })
@@ -373,6 +373,132 @@ describe('AppFrame normal width concessions', () => {
     act(() => { instance.actions.toggleSidebar() })
     expect(tracks(frame)[0]).toBe(280)
     expect(instance.getSnapshot().layoutInfo.sidebar).toBe(0)
+  })
+})
+
+describe('AppFrame phone drawer', () => {
+  it('overlays the frame below the mobile breakpoint instead of squeezing the center', () => {
+    frameWidth = 393
+    const { frame, instance, sidebarOwner } = mountFrame()
+    act(() => { instance.actions.toggleSidebar() })
+    expect(tracks(frame)).toEqual([0, 0])
+    expect(sidebarOwner()).toEqual({ collapsed: false, width: 280 })
+    expect(frame.dataset.mobileDrawer).toBe('true')
+    expect(frame.querySelector('[data-shell-drawer-scrim]')).not.toBeNull()
+    expect(frame.querySelector('[data-side="sidebar"]')).toBeNull()
+  })
+
+  it('clamps the drawer width to keep a conversation sliver on narrow phones', () => {
+    frameWidth = 320
+    const { instance, sidebarOwner } = mountFrame()
+    act(() => { instance.actions.toggleSidebar() })
+    expect(sidebarOwner()).toEqual({ collapsed: false, width: 256 })
+  })
+
+  it('dismisses the drawer from the scrim and restores the reopen strip', () => {
+    frameWidth = 393
+    const { frame, instance } = mountFrame()
+    act(() => { instance.actions.toggleSidebar() })
+    const scrim = frame.querySelector<HTMLElement>('[data-shell-drawer-scrim]')
+    if (scrim === null) throw new Error('missing drawer scrim')
+    act(() => { scrim.click() })
+    expect(tracks(frame)).toEqual([5, 0])
+    expect(frame.dataset.mobileDrawer).toBeUndefined()
+    expect(frame.querySelector('[data-shell-drawer-scrim]')).toBeNull()
+    expect(frame.querySelector('[data-shell-drawer-handle]')).not.toBeNull()
+  })
+
+  it('renders a 5px reopen strip instead of the icon rail below the mobile breakpoint', () => {
+    frameWidth = 393
+    const { frame } = mountFrame()
+    expect(tracks(frame)).toEqual([5, 0])
+    const handle = frame.querySelector<HTMLElement>('[data-shell-drawer-handle]')
+    expect(handle?.tagName).toBe('BUTTON')
+    expect(frame.querySelector('[data-testid="sidebar-content"]')).toBeNull()
+    expect(frame.querySelector('[data-side="sidebar"]')).toBeNull()
+  })
+
+  it('opens the drawer from a tap on the reopen strip', () => {
+    frameWidth = 393
+    const { frame, instance } = mountFrame()
+    const handle = frame.querySelector<HTMLElement>('[data-shell-drawer-handle]')
+    if (handle === null) throw new Error('missing drawer handle')
+    pointer(handle, 'pointerdown', 2)
+    pointer(handle, 'pointerup', 4)
+    expect(tracks(frame)).toEqual([0, 0])
+    expect(frame.dataset.mobileDrawer).toBe('true')
+    expect(instance.getSnapshot().layoutInfo.narrowExpanded).toBe(true)
+  })
+
+  it('opens the drawer from a rightward swipe once the travel crosses the threshold', () => {
+    frameWidth = 393
+    const { frame } = mountFrame()
+    const handle = frame.querySelector<HTMLElement>('[data-shell-drawer-handle]')
+    if (handle === null) throw new Error('missing drawer handle')
+    pointer(handle, 'pointerdown', 2)
+    pointer(handle, 'pointermove', 14)
+    expect(frame.dataset.mobileDrawer).toBeUndefined()
+    pointer(handle, 'pointermove', 40)
+    expect(frame.dataset.mobileDrawer).toBe('true')
+    // The swipe consumed the gesture: a trailing pointerup must not toggle again.
+    pointer(handle, 'pointerup', 40)
+    expect(frame.dataset.mobileDrawer).toBe('true')
+  })
+
+  it('treats a release below the swipe threshold as a tap', () => {
+    frameWidth = 393
+    const { frame } = mountFrame()
+    const handle = frame.querySelector<HTMLElement>('[data-shell-drawer-handle]')
+    if (handle === null) throw new Error('missing drawer handle')
+    pointer(handle, 'pointerdown', 2)
+    pointer(handle, 'pointermove', 14)
+    pointer(handle, 'pointerup', 14)
+    expect(frame.dataset.mobileDrawer).toBe('true')
+  })
+
+  it('ignores secondary buttons, stale pointers, and cancelled strips', () => {
+    frameWidth = 393
+    const { frame } = mountFrame()
+    const handle = frame.querySelector<HTMLElement>('[data-shell-drawer-handle]')
+    if (handle === null) throw new Error('missing drawer handle')
+    pointer(handle, 'pointerdown', 2, 1, 2)
+    pointer(handle, 'pointermove', 40)
+    pointer(handle, 'pointerup', 40)
+    pointer(handle, 'pointerdown', 2)
+    pointer(handle, 'pointermove', 40, 9)
+    pointer(handle, 'pointerup', 40, 9)
+    expect(frame.dataset.mobileDrawer).toBeUndefined()
+    pointer(handle, 'pointercancel', 40)
+    pointer(handle, 'pointerup', 2)
+    expect(frame.dataset.mobileDrawer).toBeUndefined()
+  })
+
+  it('opens the drawer from keyboard activation on the reopen strip', () => {
+    frameWidth = 393
+    const { frame } = mountFrame()
+    const handle = frame.querySelector<HTMLElement>('[data-shell-drawer-handle]')
+    if (handle === null) throw new Error('missing drawer handle')
+    act(() => { handle.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })) })
+    expect(frame.dataset.mobileDrawer).toBeUndefined()
+    act(() => { handle.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true })) })
+    expect(frame.dataset.mobileDrawer).toBe('true')
+  })
+
+  it('keeps the squeeze expansion between the mobile and auto-collapse breakpoints', () => {
+    frameWidth = 700
+    const { frame, instance } = mountFrame()
+    act(() => { instance.actions.toggleSidebar() })
+    expect(tracks(frame)).toEqual([280, 0])
+    expect(frame.dataset.mobileDrawer).toBeUndefined()
+    expect(frame.querySelector('[data-shell-drawer-scrim]')).toBeNull()
+  })
+
+  it('keeps the icon rail above the mobile breakpoint', () => {
+    frameWidth = 700
+    const { frame } = mountFrame()
+    expect(tracks(frame)).toEqual([56, 0])
+    expect(frame.querySelector('[data-shell-drawer-handle]')).toBeNull()
+    expect(frame.querySelector('[data-testid="sidebar-content"]')).not.toBeNull()
   })
 })
 

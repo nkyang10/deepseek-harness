@@ -347,6 +347,10 @@ button.crumb:hover {
   display: flex;
   flex: none;
   flex-direction: column;
+  /* Keep the card clear of the home-indicator / gesture bar on notched
+     phones; env() resolves to 0 on every desktop platform, so desktop and
+     Electron windows pay nothing (apps/web declares viewport-fit=cover). */
+  padding-bottom: env(safe-area-inset-bottom);
   /* One cap for every scrolling text region a composer seat can hold: the
      InputBar draft (figma Input 75:8208 max 14 lines × 24px line) and the
      takeover panels' bodies top out at the same height, so electing a

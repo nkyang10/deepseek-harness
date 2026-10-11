@@ -19,7 +19,7 @@ import type { ReactNode } from 'react'
 import type {
   PropsLocale, PropsRenderSlots, PropsRuntime, PropsStore,
 } from '@deepseek-ai/dsh-client-ui-slots'
-import { CENTER_MIN, clampWidth, computeColumns, RIGHTBAR_DEFAULT_RATIO, RIGHTBAR_MAX_RATIO, RIGHTBAR_MIN, SIDEBAR_AUTO_COLLAPSE, SIDEBAR_COLLAPSED, SIDEBAR_DEFAULT } from './columns.ts'
+import { CENTER_MIN, clampWidth, computeColumns, MOBILE_BREAKPOINT, MOBILE_COLLAPSED_WIDTH, RIGHTBAR_DEFAULT_RATIO, RIGHTBAR_MAX_RATIO, RIGHTBAR_MIN, SIDEBAR_AUTO_COLLAPSE, SIDEBAR_COLLAPSED, SIDEBAR_DEFAULT } from './columns.ts'
 import { DocumentTitle } from './DocumentTitle.tsx'
 import type { createLayoutStore } from './stores.ts'
 import css from './AppFrame.module.css'
@@ -117,6 +117,9 @@ function DragHandle(props: { side: 'sidebar' | 'rightbar'; left: number; onStart
   )
 }
 
+/** Rightward pointer travel over the reopen strip that counts as a swipe-open. */
+const DRAWER_SWIPE_OPEN = 24
+
 /** The three-column frame (see module doc). */
 export function AppFrame({
   useStore,
@@ -159,6 +162,15 @@ export function AppFrame({
 
   const narrow = viewport < SIDEBAR_AUTO_COLLAPSE
   const sidebarCollapsed = narrow ? !layoutInfo.narrowExpanded : layoutInfo.sidebar === 0
+  // Phone drawer: below the mobile breakpoint an expanded sidebar cannot
+  // reserve a track (the center would collapse toward zero), so it overlays
+  // the frame instead. narrowExpanded is only ever true while narrow, and
+  // MOBILE_BREAKPOINT < SIDEBAR_AUTO_COLLAPSE, so the flag alone gates here.
+  const mobileDrawer = viewport < MOBILE_BREAKPOINT && layoutInfo.narrowExpanded
+  // Collapsed mobile: the icon rail gives way to a 5px reopen strip; the rail
+  // content unmounts because no rail fits the track (the drawerHandle below is
+  // the strip's tap/swipe target).
+  const mobileHandle = viewport < MOBILE_BREAKPOINT && sidebarCollapsed
   const sidebarPreference = sidebarCollapsed
     ? 0
     : layoutInfo.sidebar === 0 ? SIDEBAR_DEFAULT : layoutInfo.sidebar
@@ -166,12 +178,21 @@ export function AppFrame({
   // Desktop reopen controls occupy the frame's shell.leading seat (macOS) or
   // the Windows caption row; neither platform keeps an icon rail.
   const darwin = document.documentElement.dataset.platform === 'darwin'
-  const collapsedWidth = darwin
-    || document.documentElement.hasAttribute('data-windows-titlebar') ? 0 : SIDEBAR_COLLAPSED
+  const collapsedWidth = viewport < MOBILE_BREAKPOINT
+    ? MOBILE_COLLAPSED_WIDTH
+    : darwin
+      || document.documentElement.hasAttribute('data-windows-titlebar') ? 0 : SIDEBAR_COLLAPSED
   // Opening on a narrow frame collapses the left sidebar. Eligibility must
   // include that space before the occupant's first shown report arrives.
   const normal = computeColumns(viewport, !layoutInfo.rightbarShown && narrow ? 0 : sidebarPreference, rightbarPreference, collapsedWidth)
-  const cols = computeColumns(viewport, sidebarPreference, layoutInfo.rightbarTrack ? rightbarPreference : 0, collapsedWidth)
+  // The drawer reserves no track in either column: the center keeps the full
+  // frame width under the overlay.
+  const cols = mobileDrawer
+    ? { sidebar: 0, center: viewport, rightbar: 0 }
+    : computeColumns(viewport, sidebarPreference, layoutInfo.rightbarTrack ? rightbarPreference : 0, collapsedWidth)
+  // Drawer width tracks the frame on small phones; the 64px residue keeps a
+  // sliver of the conversation visible behind the scrim.
+  const drawerWidth = Math.min(SIDEBAR_DEFAULT, viewport - 64)
   const colsRef = useRef(cols)
   colsRef.current = cols
   const rightbarWidth = useRef(normal.rightbar)
@@ -222,6 +243,42 @@ export function AppFrame({
     }
   }, [animating])
   const onDragEnd = useCallback(() => { setDragging(false) }, [])
+  // The drawer scrim closes the drawer; the toggle flips narrowExpanded back.
+  const onDrawerScrimClick = useCallback(() => { actions.toggleSidebar() }, [actions])
+  // The reopen strip is a button and a swipe surface: a press travelling
+  // DRAWER_SWIPE_OPEN px rightward opens the drawer mid-gesture, a release
+  // below the threshold is a tap, and keyboard activation rides keydown — the
+  // pointer path owns pointerup, so a native click would double-fire.
+  const swipeGesture = useRef<{ pointerId: number; startX: number } | null>(null)
+  const onDrawerHandlePointerDown = useCallback((e: React.PointerEvent<HTMLButtonElement>) => {
+    if (e.button !== 0 || swipeGesture.current !== null) return
+    e.currentTarget.setPointerCapture(e.pointerId)
+    swipeGesture.current = { pointerId: e.pointerId, startX: e.clientX }
+  }, [])
+  const onDrawerHandlePointerMove = useCallback((e: React.PointerEvent<HTMLButtonElement>) => {
+    const gesture = swipeGesture.current
+    if (gesture === null || gesture.pointerId !== e.pointerId) return
+    if (e.clientX - gesture.startX >= DRAWER_SWIPE_OPEN) {
+      // Clearing first keeps a trailing pointerup from reading the gesture as
+      // a tap and toggling a second time.
+      swipeGesture.current = null
+      actions.toggleSidebar()
+    }
+  }, [actions])
+  const onDrawerHandlePointerUp = useCallback((e: React.PointerEvent<HTMLButtonElement>) => {
+    const gesture = swipeGesture.current
+    if (gesture === null || gesture.pointerId !== e.pointerId) return
+    swipeGesture.current = null
+    actions.toggleSidebar()
+  }, [actions])
+  const onDrawerHandlePointerCancel = useCallback((e: React.PointerEvent<HTMLButtonElement>) => {
+    if (swipeGesture.current?.pointerId === e.pointerId) swipeGesture.current = null
+  }, [])
+  const onDrawerHandleKeyDown = useCallback((e: React.KeyboardEvent<HTMLButtonElement>) => {
+    if (e.key !== 'Enter' && e.key !== ' ') return
+    e.preventDefault()
+    actions.toggleSidebar()
+  }, [actions])
   const onSidebarStart = useCallback(() => { sidebarBase.current = colsRef.current.sidebar; setDragging(true) }, [])
   const onSidebarDrag = useCallback((dx: number) => {
     actions.setSidebar(sidebarBase.current + dx)
@@ -239,10 +296,14 @@ export function AppFrame({
   // whole and was corrected two frames later — visible jitter. cols keeps only
   // the discrete decisions (track present, collapse state) and the drag base.
   const rightbarMax = cols.rightbar === 0 ? 0 : clampWidth(rightbarPreference, RIGHTBAR_MIN, viewport * RIGHTBAR_MAX_RATIO)
-  const sidebar = useMemo(() => renderSlot('sidebar', {
-    collapsed: sidebarCollapsed,
-    width: cols.sidebar,
-  }), [renderSlot, sidebarCollapsed, cols.sidebar])
+  const sidebar = useMemo(() => (
+    mobileHandle
+      ? null
+      : renderSlot('sidebar', {
+        collapsed: sidebarCollapsed,
+        width: mobileDrawer ? drawerWidth : cols.sidebar,
+      })
+  ), [renderSlot, mobileHandle, sidebarCollapsed, mobileDrawer, drawerWidth, cols.sidebar])
   const main = useMemo(() => (
     <MainPanel usePanelInfo={usePanelInfo} renderSlot={renderSlot} />
   ), [usePanelInfo, renderSlot])
@@ -266,6 +327,7 @@ export function AppFrame({
           `${cols.sidebar}px minmax(${cols.rightbar === 0 ? 0 : CENTER_MIN}px, 1fr) minmax(0px, ${rightbarMax}px)`,
       }}
       data-sidebar-collapsed={sidebarCollapsed || undefined}
+      data-mobile-drawer={mobileDrawer || undefined}
       data-rightbar-collapsed={cols.rightbar === 0 || undefined}
       data-rightbar-fullscreen={layoutInfo.rightbarFullscreen || undefined}
       data-rightbar-instant={layoutInfo.rightbarInstant || undefined}
@@ -289,6 +351,9 @@ export function AppFrame({
       <div className={css.bottomRow} data-shell-bottom>
         {renderSlot('shell.bottom', {})}
       </div>
+      {/* Phone drawer scrim: dismisses the overlay drawer; painted under the
+          absolute sidebar column (AppFrame.module.css z-index pair). */}
+      {mobileDrawer && <div className={css.drawerScrim} data-shell-drawer-scrim onClick={onDrawerScrimClick} aria-hidden="true" />}
       <div className={css.overlayLayer} data-shell-overlay>
         {overlays}
       </div>
@@ -297,8 +362,30 @@ export function AppFrame({
           {leading}
         </div>
       )}
-      {/* The collapsed rail is fixed-width: no resize handle while closed. */}
-      {!sidebarCollapsed && <DragHandle side="sidebar" left={cols.sidebar} onStart={onSidebarStart} onDrag={onSidebarDrag} onEnd={onDragEnd} />}
+      {/* Phone reopen strip: the 5px sidebar track paints the fill and hairline;
+          this button is its tap/swipe target with a wider hit area, and the
+          chevron overhangs the strip edge. */}
+      {mobileHandle && (
+        <button
+          type="button"
+          className={css.drawerHandle}
+          data-shell-drawer-handle
+          aria-label={t('sidebar.expand')}
+          onPointerDown={onDrawerHandlePointerDown}
+          onPointerMove={onDrawerHandlePointerMove}
+          onPointerUp={onDrawerHandlePointerUp}
+          onPointerCancel={onDrawerHandlePointerCancel}
+          onLostPointerCapture={onDrawerHandlePointerCancel}
+          onKeyDown={onDrawerHandleKeyDown}
+        >
+          <svg viewBox="0 0 8 12" width="8" height="12" aria-hidden="true">
+            <path d="M1.5 1 6.5 6 1.5 11" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+          </svg>
+        </button>
+      )}
+      {/* The collapsed rail is fixed-width: no resize handle while closed, and
+          the phone drawer is handle-free overlay geometry. */}
+      {!sidebarCollapsed && !mobileDrawer && <DragHandle side="sidebar" left={cols.sidebar} onStart={onSidebarStart} onDrag={onSidebarDrag} onEnd={onDragEnd} />}
       {layoutInfo.rightbarShown && !layoutInfo.rightbarFullscreen && normal.rightbar > 0 && (
         <DragHandle side="rightbar" left={viewport - normal.rightbar} onStart={onRightbarStart} onDrag={onRightbarDrag} onEnd={onDragEnd} />
       )}

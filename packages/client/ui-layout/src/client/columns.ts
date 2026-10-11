@@ -21,6 +21,14 @@ export const SIDEBAR_COLLAPSED = 56
  * LG breakpoint); a manual toggle below it re-expands over the squeezed center
  * (stores.ts narrowExpanded). */
 export const SIDEBAR_AUTO_COLLAPSE = 1024
+/** Viewport width below which an expanded sidebar overlays the frame as a
+ * drawer (AppFrame data-mobile-drawer) instead of squeezing the center column;
+ * a phone cannot spare the track. Must stay below SIDEBAR_AUTO_COLLAPSE. */
+export const MOBILE_BREAKPOINT = 640
+/** Collapsed mobile sidebar: a 5px reopen strip (AppFrame drawerHandle) instead
+ * of the icon rail — a phone spends its width on the conversation. Must stay
+ * below SIDEBAR_COLLAPSED. */
+export const MOBILE_COLLAPSED_WIDTH = 5
 /** Right column drag clamp floor. */
 export const RIGHTBAR_MIN = 300
 /** Maximum normal right panel width as a fraction of the frame. */
