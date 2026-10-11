@@ -76,6 +76,15 @@
   --dsh-scrollbar-thumb-hover: var(--dsw-alias-scrollbar-hover-l2);
 }
 
+/* Coarse pointers (phones): keep the editable at Safari's no-zoom floor —
+   iOS focus-zooms the page when an editable computes below 16px, so the
+   Settings font-size preference yields to the floor on touch devices. */
+@media (pointer: coarse) {
+  .card {
+    font-size: max(var(--dsh-content-font-size, 14px), 16px);
+  }
+}
+
 /* No-workspace trigger state: an inset 1px dashed outline marks the card as a
    workspace picker rather than a live composer. Keeping the complete stroke
    inside the rounded box prevents clipped corner pixels from reading heavier. */
@@ -416,3 +425,21 @@
 .activity { display: flex; align-items: center; flex: none; }
 .activity:empty { display: none; }
 .activityExpanded { flex: 1; min-width: 0; }
+
+/* Coarse pointers: grow the primary composer controls toward touch target
+   sizes; precise pointers keep the figma sizes untouched. */
+@media (pointer: coarse) {
+  .add {
+    width: 36px;
+    height: 36px;
+  }
+
+  .select {
+    height: 36px;
+  }
+
+  .primary {
+    width: 40px;
+    height: 40px;
+  }
+}
