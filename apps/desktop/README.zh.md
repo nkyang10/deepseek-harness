@@ -146,6 +146,12 @@ macOS 上自定义菜单保留 Electron 的标准 Window 菜单及应用隐藏�
 
 macOS 和 Linux 从图形界面启动的程序只继承会话管理器提供的环境，不包含 shell 启动文件导出的变量。第一个 Host 启动之前，Desktop 以 `<shell> -ilc` 运行一次账户的登录 shell（取自用户数据库，不看 `$SHELL`），读取定界符之间的 `env -0` 输出，使 `~/.zprofile` 和 `~/.zshrc`（或该 shell 的对应文件）对 Host、agent shell、终端和 profile 配置生效。读取与 profile 准备并行进行。读取进程没有终端输入，并设置 `DISABLE_AUTO_UPDATE=true`、`ZSH_TMUX_AUTOSTARTED=true` 和 `ZSH_TMUX_AUTOSTART=false`，避免 oh-my-zsh 和 tmux 插件阻塞。shell 的值覆盖继承的值，但 `PWD`、`OLDPWD`、`SHLVL`、`_`、上述读取变量以及启动方自有的 `DSH_*` 和 `ELECTRON_*` 除外；Desktop 在读取之前已按 `DSH_HOME` 等变量解析路径，因此 Host 保持相同的值。读取在结束定界符出现时完成，因此启动文件启动的后台进程可以继续运行，其输出被丢弃。候选 shell 无法启动、以非零状态退出、没有输出定界内容或超过 `DSH_DESKTOP_LOGIN_SHELL_TIMEOUT_MS`（1000 到 2147483647 的整数毫秒，默认 `10000`；超时会结束其进程组）时，Desktop 记录一条警告，并依次尝试 `/bin/zsh`、`/bin/bash` 和 `/bin/sh`；全部失败时 Host 使用继承的环境。读取命令使用 POSIX 语法，因此 csh、tcsh 或 nushell 等账户 shell 会失败，Host 改为获得第一个系统 shell 的启动文件所设置的环境。读取期间退出 Desktop 会结束正在运行的读取进程组。每个应用进程只读取一次，因此修改 shell 启动文件后需要退出并重新打开 Desktop。Windows 从图形界面启动的程序已经从注册表继承用户和系统环境变量，因此 Windows 跳过这一步。
 
+### Web 监听绑定
+
+Host 的 Web 监听默认对局域网服务：绑定本机主接口地址——即默认路由使用的接口，每次启动时检测且不发送任何数据包——端口为 `9445`。主机没有可路由的非回环接口时回退到 `127.0.0.1`。`DSH_DESKTOP_WEB_HOST` 可改为指定本机一个具体 IPv4 或 IPv6 地址（`127.0.0.1` 恢复仅回环的 GUI；通配地址会拒绝启动，因为意外绑定全部接口不是受支持的形态），`DSH_DESKTOP_WEB_PORT` 设置端口（`0` 表示由操作系统分配）。两个变量从分层环境读取，因此在 `~/.dsh/.env` 中配置即可对每次启动生效。非回环绑定让 shell 窗口和局域网浏览器共用同一个监听器，并把目录选择器切换为远程浏览器可用的页内后端；DHCP 地址变化在下次启动时生效。
+
+应用菜单的“复制网页链接”项复制正在运行的 Web 应用的已认证 URL——绑定地址加进程启动令牌。在任意浏览器中打开它会为该 authority 铸造 30 天的会话 cookie；令牌在每次 Host 启动时更换，因此重启后需重新复制。该 URL 是通过明文 HTTP 传输的进程凭据：只与预期用户共享，并用防火墙把端口限制在应能访问的网络内。
+
 ## 开发
 
 开发环境应用菜单提供“刷新页面”（macOS 为 Cmd+R，其他平台为 Ctrl+R）和“重启应用与 Host”。重启会等待 Host 关闭，再重新启动 Electron 和新的 Host；这两项操作都不会重新构建源码。

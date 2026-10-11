@@ -14,6 +14,7 @@ import { installDesktopUpdateTaskControl } from './update-tasks.ts'
 import { installDesktopQuitInspection } from './quit-inspection.ts'
 import { installPlatformSessionPublisher } from './platform-session.ts'
 import { installOfficeEngineResolution } from './office-engine.ts'
+import { desktopWebUrl, resolveDesktopWebBind } from './web-bind.ts'
 
 async function main(): Promise<void> {
   const runtimeDir = process.argv[2] as string
@@ -22,12 +23,14 @@ async function main(): Promise<void> {
   const installAnchor = join(runtimeDir, 'node_modules', '@deepseek-ai', 'dsh', 'package.json')
   const profile = loadProfileDirectory('dsh', projectDir, installAnchor)
   reportSkippedBundles('dsh', profile)
+  const environment = loadLayeredEnv('dsh')
+  const bind = await resolveDesktopWebBind(process.env)
   const application = runProfile({
-    environment: loadLayeredEnv('dsh'),
+    environment,
     profile: 'desktop',
     resolvedProfile: { profile, installAnchor },
     patchFiles: [],
-    args: ['--no-open', '--host', '127.0.0.1', '--port', '0'],
+    args: ['--no-open', '--host', bind.host, '--port', String(bind.port)],
     ...(process.argv[5] === undefined ? {} : {
       packageManager: {
         command: process.execPath,
@@ -100,7 +103,7 @@ async function main(): Promise<void> {
   installPlatformSessionPublisher(ctx, (session) => {
     if (process.connected) process.send?.({ type: 'platform-session', session })
   })
-  const url = ctx.connection.authenticatedUrl(`${ctx.webServer.protocol}//127.0.0.1:${String(ctx.webServer.port)}`)
+  const url = ctx.connection.authenticatedUrl(desktopWebUrl(ctx.webServer))
   if (process.connected) process.send?.({ type: 'ready', url, injections: ctx.webServer.collectIndexInjections() }, (error) => { if (error !== null) console.error(error) })
 }
 

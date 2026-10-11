@@ -957,6 +957,11 @@ async function main(): Promise<void> {
       : { label: currentDesktopLocale().messages.aboutMenu, role: 'about' },
     { type: 'separator' },
     { label: currentDesktopLocale().messages.checkUpdatesMenu, click: () => { void openUpdatePrompt(true) } },
+    { label: currentDesktopLocale().messages.copyWebLinkMenu, click: () => {
+      // The URL carries the process launch token; pasting it into a browser
+      // signs that browser in, so the user owns where it goes.
+      if (hostUrl !== undefined) void clipboard.writeText(hostUrl)
+    } },
     ...process.platform === 'darwin' || process.platform === 'win32'
       ? [{ label: currentDesktopLocale().messages.cliCommandMenu, click: () => { void commandManager.show() } }] : [],
     ...development ? [
