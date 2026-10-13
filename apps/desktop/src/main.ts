@@ -986,14 +986,16 @@ async function main(): Promise<void> {
   }
   refreshApplicationMenu()
   const trayIconPath = development ? join(app.getAppPath(), 'resources', 'tray-windows.ico') : join(process.resourcesPath, 'tray.ico')
-  if (process.platform === 'win32') {
+  // closeQuits owns the window-close gesture, so nothing hidden needs a way back.
+  const closeQuits = desktopSettings.window.closeQuits
+  if (process.platform === 'win32' && !closeQuits) {
     // The tray is the way back to a hidden window; without it, relaunching the application still focuses it.
     try {
       tray = new DesktopTray({ iconPath: trayIconPath, locale: currentDesktopLocale,
         open: () => { focusPrimaryWindow() }, quit: () => { app.quit() } })
     } catch (error) { console.warn('desktop tray: unavailable', error) }
   }
-  const backgroundNotice = process.platform === 'win32'
+  const backgroundNotice = process.platform === 'win32' && !closeQuits
     ? new DesktopBackgroundNotice({ markerPath: join(app.getPath('userData'), 'background-close-confirmed'),
       locale: () => locale, show: ordinaryMessageBox, focus: () => { updateDialog.focus() } })
     : undefined
@@ -1073,8 +1075,11 @@ async function main(): Promise<void> {
     shortcuts.attach(window)
     window.on('focus', automaticCheck)
     // Closing hides: the page and the Host keep running, and the next show resumes the same document.
+    // With window.closeQuits the close quits through the guarded path instead; a cancelled
+    // confirmation leaves the window in place, so no hidden window ever needs a tray way back.
     window.on('close', (event) => {
       if (quitting || shellInstallerOwnsQuit || sessionEnding) return
+      if (desktopSettings.window.closeQuits) { event.preventDefault(); app.quit(); return }
       event.preventDefault()
       if (updateDialog.isOpen) { updateDialog.focus(); return }
       const hide = (): void => {
