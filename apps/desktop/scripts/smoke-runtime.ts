@@ -1,16 +1,41 @@
 /** Boot the materialized target runtime without access to a user's Harness profile. */
 
 import { appendFileSync, cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
-import { rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { execFile } from 'node:child_process'
+import { execFile, spawn } from 'node:child_process'
 import { promisify } from 'node:util'
 import { fileURLToPath } from 'node:url'
 import { readPrimaryRuntime, workspaceDependencyPaths } from '../../../packages/skill/tool-workspace-dependencies/src/index.ts'
 import { DesktopHostProcess } from '../src/host-process.ts'
 import { createPluginProfile } from '../src/project-manager.ts'
 import type { DesktopRuntimeDescriptor } from '../src/runtime-tree.ts'
+
+/**
+ * Resolve with the promise's outcome, or undefined once the deadline passes.
+ * @param promise - The awaited work.
+ * @param milliseconds - Deadline after which the caller stops waiting.
+ * @returns The promise's value, or undefined when the deadline won.
+ */
+function within<T>(promise: Promise<T>, milliseconds: number): Promise<T | undefined> {
+  let timer: number | NodeJS.Timeout | undefined
+  return Promise.race([
+    promise,
+    new Promise<undefined>((resolve) => { timer = setTimeout(resolve, milliseconds) }),
+  ]).finally(() => { clearTimeout(timer) })
+}
+
+/**
+ * Remove one directory in a detached child, so a wedged recursive delete can
+ * neither hang the pipeline nor keep this process alive. The child force-exits
+ * past its own deadline, leaving an unremovable directory as residue.
+ * @param directory - The directory to remove.
+ */
+export function removeDetached(directory: string): void {
+  const script = `setTimeout(() => process.exit(0), 120000).unref()
+    require('node:fs').rmSync(${JSON.stringify(directory)}, { recursive: true, force: true, maxRetries: 20, retryDelay: 50 })`
+  spawn(process.execPath, ['-e', script], { stdio: 'ignore', detached: true, windowsHide: true }).unref()
+}
 
 /**
  * Check CLI package operations, Host startup, its frontend, external plugins and real Office-to-PDF conversion.
@@ -187,8 +212,15 @@ export function apply(ctx) {
     console.log('desktop runtime: DOCX, XLSX, PPTX to PDF and skill CLI discovery passed')
   } finally {
     clearTimeout(timer)
-    try { await host.stop() } finally {
-      await rm(home, { recursive: true, force: true, maxRetries: 20, retryDelay: 50 })
+    // A wedged child or a stuck recursive delete must not hang the packaging
+    // pipeline: bound the graceful stop, force the process tree to die past the
+    // deadline, and treat an unremovable temporary home as residue, not failure.
+    const pid = host.pid
+    await within(host.stop().catch(() => undefined), 30_000)
+    if (pid !== undefined && process.platform === 'win32') {
+      await promisify(execFile)(join(process.env.SystemRoot ?? 'C:\\Windows', 'System32', 'taskkill.exe'),
+        ['/PID', String(pid), '/T', '/F']).catch(() => undefined)
     }
+    removeDetached(home)
   }
 }
