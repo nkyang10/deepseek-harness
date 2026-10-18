@@ -24,7 +24,7 @@ import {
 } from 'electron'
 import { resolveDesktopPaths } from './paths.ts'
 import { DesktopProjectManager } from './project-manager.ts'
-import { DesktopHostFatalError, DesktopHostProcess, DesktopHostUncleanExitError } from './host-process.ts'
+import { DesktopHostFatalError, DesktopHostProcess, DesktopHostUncleanExitError, type DesktopBrowserSession } from './host-process.ts'
 import { DesktopPlatformView, PLATFORM_IPC, platformBounds } from './platform-view.ts'
 import { installDesktopDirectoryPicker } from './directory-picker.ts'
 import { installMicrophonePermissions } from './microphone-permissions.ts'
@@ -33,6 +33,7 @@ import { DESKTOP_IPC, SCHEME, assertDesktopSender, type DesktopUpdateState } fro
 import { readDeviceInfo } from './device-info.ts'
 import { desktopUpdateReadyConfirmation, formatDesktopMessage, resolveDesktopLocale, resolveDesktopStartupLocale } from './locale.ts'
 import { claimDesktopSingleInstance } from './single-instance.ts'
+import { desktopUpdateChannel } from './update-channel.ts'
 import { DesktopUpdateCoordinator } from './update-coordinator.ts'
 import { DesktopCommandManager } from './command-management.ts'
 import { serveWebDocument, authenticateWebHost, forwardWebRequest } from './web-document.ts'
@@ -508,11 +509,82 @@ async function main(): Promise<void> {
       },
       updateTasks: (action: 'inspect' | 'lock' | 'unlock') => host.updateTasks(action),
       inspectQuit: () => host.inspectQuit(),
+      browserSessions: (action: 'list' | 'revoke' | 'rotate', deviceId?: string) => host.browserSessions(action, deviceId),
     }
   }, (state) => {
     if (state.phase === 'error') reportFatal(state.failure, 'host')
     else if (!shuttingDown) backendReady = state.phase === 'ready'
   })
+
+  /** One paired browser as the device list renders it. */
+  const describeBrowserSession = (session: DesktopBrowserSession): string => {
+    const paired = new Date(session.pairedAt).toLocaleString(currentDesktopLocale().id)
+    const agent = session.userAgent === '' ? locale.messages.pairedDeviceUnknown : session.userAgent
+    return `${agent} — ${formatDesktopMessage(locale.messages.pairedDevicePaired, { date: paired })}`
+  }
+  const revokeBrowserSession = async (session: DesktopBrowserSession): Promise<void> => {
+    const messages = currentDesktopLocale().messages
+    const confirmed = await ordinaryMessageBox({
+      type: 'warning',
+      message: messages.pairedDeviceRevokeTitle,
+      detail: describeBrowserSession(session),
+      buttons: [messages.pairedDeviceRevokeItem, locale.messages.cancel],
+      defaultId: 1,
+      cancelId: 1,
+      noLink: true,
+    })
+    if (confirmed.response !== 0) return
+    const host = backend.host
+    if (host === undefined) return
+    try {
+      await host.browserSessions('revoke', session.id)
+    } catch (error) {
+      console.error(error)
+    }
+  }
+  const rotatePairingCode = async (): Promise<void> => {
+    const host = backend.host
+    if (host === undefined) return
+    let rotated: { url?: string }
+    try {
+      rotated = await host.browserSessions('rotate')
+    } catch (error) {
+      console.error(error)
+      return
+    }
+    // Every copied link carries the code that was current when it was copied;
+    // adopting the replacement keeps Copy Web Link and the shell window on the
+    // code that pairs now.
+    if (rotated.url !== undefined) hostUrl = rotated.url
+  }
+  const showBrowserSessions = async (): Promise<void> => {
+    const host = backend.host
+    if (host === undefined) return
+    let sessions: readonly DesktopBrowserSession[]
+    try {
+      ({ sessions } = await host.browserSessions('list'))
+    } catch (error) {
+      console.error(error)
+      return
+    }
+    const messages = currentDesktopLocale().messages
+    const template: MenuItemConstructorOptions[] = [
+      { label: formatDesktopMessage(messages.pairedDeviceCount, { count: String(sessions.length) }), enabled: false },
+      { type: 'separator' },
+      ...sessions.map(session => ({
+        label: describeBrowserSession(session),
+        submenu: [{
+          label: messages.pairedDeviceRevokeItem,
+          click: () => { void revokeBrowserSession(session) },
+        }],
+      })),
+      { type: 'separator' },
+      { label: messages.pairedDeviceRotateItem, click: () => { void rotatePairingCode() } },
+    ]
+    const popupWindow = currentMainWindow()
+    if (popupWindow === undefined) return
+    Menu.buildFromTemplate(template).popup({ window: popupWindow })
+  }
 
   const updateErrors = new WeakMap<DesktopUpdateState, Promise<void>>()
   const showUpdateFailure = (state: DesktopUpdateState): Promise<void> => {
@@ -583,6 +655,8 @@ async function main(): Promise<void> {
     return startup
   }
 
+  const manifest: unknown = JSON.parse(await readFile(join(app.getAppPath(), 'package.json'), 'utf8'))
+  const updateChannel = desktopUpdateChannel(manifest)
   const updates = new DesktopUpdateCoordinator(
     publishUpdate,
     async () => {
@@ -636,7 +710,7 @@ async function main(): Promise<void> {
     },
     undefined, undefined, undefined,
     (success, reason) => { void track('desktop_upgrade_download_result', { is_success: success, ...reason === undefined ? {} : { error_reason: reason } }) },
-
+    updateChannel,
   )
 
   const updateSchedule = new DesktopUpdateSchedule(updates, resolveDesktopUpdateScheduleConfig(process.env))
@@ -958,9 +1032,12 @@ async function main(): Promise<void> {
     { type: 'separator' },
     { label: currentDesktopLocale().messages.checkUpdatesMenu, click: () => { void openUpdatePrompt(true) } },
     { label: currentDesktopLocale().messages.copyWebLinkMenu, click: () => {
-      // The URL carries the process launch token; pasting it into a browser
-      // signs that browser in, so the user owns where it goes.
+      // The URL carries the pairing code; pasting it into a browser pairs that
+      // browser, so the user owns where it goes.
       if (hostUrl !== undefined) void clipboard.writeText(hostUrl)
+    } },
+    { label: currentDesktopLocale().messages.pairedDevicesMenu, click: () => {
+      void showBrowserSessions().catch((error: unknown) => { console.error(error) })
     } },
     ...process.platform === 'darwin' || process.platform === 'win32'
       ? [{ label: currentDesktopLocale().messages.cliCommandMenu, click: () => { void commandManager.show() } }] : [],
@@ -1295,7 +1372,6 @@ async function main(): Promise<void> {
   })
 
   mainWindow = createMainWindow()
-  const manifest: unknown = JSON.parse(await readFile(join(app.getAppPath(), 'package.json'), 'utf8'))
   if (typeof manifest !== 'object' || manifest === null) throw new Error('desktop policy: invalid application manifest')
   const developmentPolicy = app.isPackaged ? undefined : process.env.DSH_DESKTOP_MANDATORY_UPDATE_CONFIG
   const policyInput: unknown = app.isPackaged
@@ -1312,6 +1388,7 @@ async function main(): Promise<void> {
     let wasBlocking = false
     mandatoryPolicy = new DesktopMandatoryUpdatePolicy(policyConfig, {
       platform: process.platform as 'win32' | 'darwin', arch: process.arch as 'x64' | 'arm64',
+      channel: updateChannel,
       bundledDshVersion: app.isPackaged ? readDesktopRuntime(resources.dsh).release.version : app.getVersion(),
     }, (state) => {
       if (state.error !== 'authentication-required') policyAuthenticationQueued = false

@@ -34,6 +34,26 @@ type DesktopHostEvent = ReadyEvent | FatalEvent | PlatformSessionEvent | { reado
   readonly activeTasks: boolean
   readonly scheduledTasks: boolean
   readonly error?: string
+} | DesktopBrowserSessionsEvent
+
+/** One browser paired with the Host's Web listener. */
+export interface DesktopBrowserSession {
+  readonly id: string
+  readonly userAgent: string
+  readonly pairedAt: number
+  readonly lastSeenAt: number
+  readonly expiresAt: number
+}
+
+/** The shell's paired-browser request, and the Host's answer to it. */
+export interface DesktopBrowserSessionsEvent {
+  readonly type: 'browser-sessions'
+  readonly requestId: number
+  /** The paired browsers after the action, in pairing order. */
+  readonly sessions: readonly DesktopBrowserSession[]
+  /** The replacement pairing URL, present only after a rotation. */
+  readonly url?: string
+  readonly error?: string
 }
 
 /** Correlated answer to one shell control request. */
@@ -47,6 +67,9 @@ export interface DesktopQuitInspection {
 
 /** Quit inspection deadline; a slower Host counts as unknown work and the shell asks before quitting. */
 export const QUIT_INSPECTION_DEADLINE_MS = 2_000
+
+/** Paired-browser deadline; a session change rewrites the credential store before answering. */
+const BROWSER_SESSIONS_DEADLINE_MS = 10_000
 
 const MAX_HOST_DIAGNOSTIC_CHARS = 64 * 1024
 
@@ -85,6 +108,16 @@ function isDesktopHostEvent(message: unknown): message is DesktopHostEvent {
     case 'quit-inspection':
       return Number.isSafeInteger(candidate.requestId) && typeof candidate.activeTasks === 'boolean'
         && typeof candidate.scheduledTasks === 'boolean' && (candidate.error === undefined || typeof candidate.error === 'string')
+    case 'browser-sessions':
+      return Number.isSafeInteger(candidate.requestId) && Array.isArray(candidate.sessions)
+        && candidate.sessions.every((session: unknown) => typeof session === 'object' && session !== null
+          && 'id' in session && typeof session.id === 'string' && session.id.length > 0
+          && 'userAgent' in session && typeof session.userAgent === 'string'
+          && 'pairedAt' in session && Number.isSafeInteger(session.pairedAt)
+          && 'lastSeenAt' in session && Number.isSafeInteger(session.lastSeenAt)
+          && 'expiresAt' in session && Number.isSafeInteger(session.expiresAt))
+        && (candidate.url === undefined || typeof candidate.url === 'string')
+        && (candidate.error === undefined || typeof candidate.error === 'string')
     default:
       return false
   }
@@ -262,13 +295,39 @@ export class DesktopHostProcess {
     return { activeTasks: response.activeTasks, scheduledTasks: response.scheduledTasks }
   }
 
+  /**
+   * List, revoke, or re-pair the browsers holding a session on the Web listener.
+   * @param action - Read the session list, end one browser's session, or replace the pairing code.
+   * @param deviceId - the session to revoke; required by `revoke` and ignored otherwise.
+   * @returns The sessions as they stand after the action, plus the replacement pairing URL after a rotation.
+   */
+  async browserSessions(
+    action: 'list' | 'revoke' | 'rotate',
+    deviceId?: string,
+  ): Promise<{ sessions: readonly DesktopBrowserSession[]; url?: string }> {
+    const response = await this.control(
+      { type: 'browser-sessions', action, ...deviceId === undefined ? {} : { deviceId } },
+      BROWSER_SESSIONS_DEADLINE_MS,
+      'desktop pairing: session inspection timed out',
+    )
+    if (response.type !== 'browser-sessions') throw new Error('desktop pairing: Host answered with a different control response')
+    return {
+      sessions: response.sessions,
+      ...response.url === undefined ? {} : { url: response.url },
+    }
+  }
+
   private async control(
-    request: { readonly type: 'update-tasks'; readonly action: 'inspect' | 'lock' | 'unlock' } | { readonly type: 'quit-inspection' },
+    request: { readonly type: 'update-tasks'; readonly action: 'inspect' | 'lock' | 'unlock' }
+    | { readonly type: 'quit-inspection' }
+    | { readonly type: 'browser-sessions'; readonly action: 'list' | 'revoke' | 'rotate'; readonly deviceId?: string },
     deadlineMs: number, deadlineMessage: string,
   ): Promise<DesktopHostControlResponse> {
     const child = this.child
     if (child === undefined || !child.connected || this.failureReported || this.stopping) {
-      throw new Error(`${request.type === 'update-tasks' ? 'desktop update' : 'desktop quit'}: Host is unavailable`)
+      const scope = request.type === 'update-tasks' ? 'desktop update'
+        : request.type === 'quit-inspection' ? 'desktop quit' : 'desktop pairing'
+      throw new Error(`${scope}: Host is unavailable`)
     }
     const requestId = this.nextControlId++
     let timer: ReturnType<typeof setTimeout> | undefined

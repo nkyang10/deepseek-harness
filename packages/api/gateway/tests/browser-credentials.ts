@@ -19,26 +19,27 @@ export function provideBrowserCredentials(ctx: Context): void {
 }
 
 /**
- * Exchange a test Host's process token for its WebSocket/HTTP Cookie header.
+ * Exchange a test Host's pairing code for its WebSocket/HTTP Cookie header.
  * @param ctx - Host root with the Web server and Connection mounted.
  * @returns the `cookie` header value, cached per root.
  */
-export function browserCookie(ctx: Context): string {
+export function browserCookie(ctx: Context): Promise<string> {
   const existing = browserCookies.get(ctx)
-  if (existing !== undefined) return existing
+  if (existing !== undefined) return Promise.resolve(existing)
   const origin = `http://127.0.0.1:${String(ctx.webServer.port)}`
   const target = new URL(ctx.connection.authenticatedUrl(origin))
   let setCookie: string | undefined
-  ctx.connection.authorizeIndex({
+  return ctx.connection.authorizeIndex({
     method: 'GET',
     url: `${target.pathname}${target.search}`,
     headers: { host: target.host },
   }, {
     writeHead(_status, headers) { setCookie = headers?.['set-cookie'] },
     end() {},
+  }).then(() => {
+    if (setCookie === undefined) throw new Error('gateway fixture did not receive a browser cookie')
+    const cookie = setCookie.split(';', 1)[0]!
+    browserCookies.set(ctx, cookie)
+    return cookie
   })
-  if (setCookie === undefined) throw new Error('gateway fixture did not receive a browser cookie')
-  const cookie = setCookie.split(';', 1)[0]!
-  browserCookies.set(ctx, cookie)
-  return cookie
 }

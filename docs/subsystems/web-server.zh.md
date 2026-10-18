@@ -116,32 +116,88 @@ createSharedFetchHandler(channel: '/api'): ConnectionFetchHandler
 requestRejection(request: ConnectionTrustRequest): ConnectionRequestRejection
 
 /**
- * Admit one request: it passes {@link requestRejection} and speaks for the
- * operator, or it is refused with that status.
+ * Admit an HTTP request against its signed browser or API credential and live Peer.
  * @param request - request headers from the HTTP or upgrade request.
- * @returns the operator Peer, or the rejection status.
+ * @returns the credential's Peer, or the rejection status.
  */
 admit(request: ConnectionTrustRequest): PeerAdmission
 
 /**
- * Authenticate one frontend index request, owning a token redirect or 401.
+/**
+ * Create an independent in-process Peer, disposed with the Context that read `ctx.connection`.
+ * @param options - fixed principal and optional interaction participation (default `answer`).
+ * @returns a new Peer distinct from every other Peer.
+ */
+createPeer(options: { readonly principal: Principal; readonly interactions?: 'answer' | 'none' }): PeerScope
+
+/**
+ * Claim a physical socket for an API Peer; browser sockets share their owner Peer.
+ * @param request - authenticated upgrade request headers.
+ * @returns the Peer and idempotent release, or 409 for duplicate API ownership.
+ * The carrier releases on socket termination or failed upgrade; release removes
+ * API admission synchronously without cancelling independent HTTP calls.
+ */
+admitConnection(request: ConnectionTrustRequest): ConnectionAdmission
+
+/**
+ * Authenticate one frontend index request, owning a pairing redirect or 401.
  * The cookie this mints is `Secure` when the mounted Web carrier serves TLS,
  * which only that listener's protocol decides.
  * @param request - root or configured-index HTTP request.
  * @param response - response owned when the result is false.
  * @returns true only when the frontend may serve index.html.
  */
-authorizeIndex(request: ConnectionIndexRequest, response: ConnectionIndexResponse): boolean
+authorizeIndex(request: ConnectionIndexRequest, response: ConnectionIndexResponse): Promise<boolean>
 
 /**
- * Add the fresh process token to an ordinary Web application URL.
+ * Add the deployment's durable pairing code to an ordinary Web application
+ * URL. Whoever opens the result pairs a new browser session.
  * @param baseUrl - clean application URL whose authority and mount are preserved.
- * @returns tokenized URL for initial login; a mount proxy strips its prefix before {@link authorizeIndex}.
+ * @returns pairing URL for a new browser; a mount proxy strips its prefix before {@link authorizeIndex}.
  */
 authenticatedUrl(baseUrl: string): string
+
+/**
+ * List the browsers currently paired with this deployment, newest pairing
+ * last, after writing back the last-seen times collected while answering
+ * requests and dropping sessions whose lifetime has passed.
+ * @returns the live sessions.
+ */
+listBrowserSessions(): Promise<readonly BrowserSession[]>
+
+/**
+ * End one paired browser's access. Every cookie naming that session stops
+ * verifying at once; other sessions and the pairing code are untouched.
+ * @param id - the session to revoke.
+ */
+revokeBrowserSession(id: BrowserDeviceId): Promise<void>
+
+/**
+ * Replace the pairing code, so previously shared links no longer pair new
+ * browsers while already paired browsers keep their sessions.
+ */
+rotatePairingCode(): Promise<void>
 ```
 
+Types: [Principal](typert.zh.md)
+
 Source: [`packages/client/connection/src/rpc.ts`](../../packages/client/connection/src/rpc.ts)
+
+<a id="ctxwebapp--webapp"></a>
+
+### `ctx.webApp` — `WebApp`
+
+The Web GUI this process serves, provided by the `web-runtime` row.
+
+```ts cordis-catalog
+/**
+ * The URL this GUI advertises, also used for `DSH_WEB_URL` and the startup URL line.
+ * @returns the configured `publicUrl`, otherwise the listener origin.
+ */
+getAdvertisedUrl(): string
+```
+
+Source: [`packages/bundle/web-app/src/index.ts`](../../packages/bundle/web-app/src/index.ts)
 
 <a id="ctxwebserver--webserver"></a>
 
@@ -150,6 +206,14 @@ Source: [`packages/client/connection/src/rpc.ts`](../../packages/client/connecti
 The browser HTTP carrier service. Activation loads any configured TLS material, then listens immediately; a material or listen failure rejects initialization, and the boot process reports the failed fiber. Route registration order does not affect requests because configured named routes must be distinct, and the fallback handler answers anything not yet claimed during startup with 404 until its owner registers.
 
 ```ts cordis-catalog
+/**
+ * The root URL local clients use to reach the bound listener: the protocol,
+ * the {@link bindUrlHost} form of the bind address, and the listening port.
+ * @returns the origin, for example `http://127.0.0.1:3080`.
+ * @throws before `listen` binds a port, or when the bind address has no URL form.
+ */
+getOrigin(): string
+
 /**
  * Register a named route. Duplicate (kind, path) throws — route patterns are
  * a composition-level contract, so a collision is a misconfiguration.

@@ -64,13 +64,14 @@ const STATIC_MISS_CODES: ReadonlySet<string | undefined> = new Set([
  * @param res - the node:http response to write.
  * @param distRoot - absolute dist root directory (resolved by the caller).
  * @param distIndex - absolute path of index.html inside distRoot.
- * @param authorizeIndex - authenticates an index response before its bytes are read.
+ * @param authorizeIndex - authenticates an index response before its bytes are
+ * read; pairing a new browser writes its session to the credential store first.
  * @param renderIndex - produces the index.html body (structured injection
  * rendering) for the dist root and configured index path.
  */
 export async function serveStatic(
   pathname: string, res: ServerResponse, distRoot: string, distIndex: string,
-  authorizeIndex: () => boolean,
+  authorizeIndex: () => Promise<boolean>,
   renderIndex: () => Promise<string>,
 ): Promise<void> {
   const target = resolve(normalize(join(distRoot, pathname)))
@@ -86,7 +87,7 @@ export async function serveStatic(
   let type: string
   try {
     if (target === distRoot || target === distIndex) {
-      if (!authorizeIndex()) return
+      if (!await authorizeIndex()) return
       body = await renderIndex()
       type = HTML_MIME
     } else {

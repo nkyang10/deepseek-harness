@@ -132,6 +132,10 @@ const harness = await vi.hoisted(async () => {
   class FakeHost {
     readonly updateTasks = vi.fn(async (_action: 'inspect' | 'lock' | 'unlock') => false)
     readonly inspectQuit = vi.fn(async () => ({ activeTasks: false, scheduledTasks: false }))
+    readonly browserSessions = vi.fn(async (action: 'list' | 'revoke' | 'rotate', deviceId?: string) => ({
+      sessions: deviceId === 'phone' ? [] : [{ id: 'phone', userAgent: 'Phone/1.0', pairedAt: 1_772_000_000_000, lastSeenAt: 1_772_000_100_000, expiresAt: 1_774_000_000_000 }],
+      ...action === 'rotate' ? { url: 'http://127.0.0.1:3080/?token=rotated' } : {},
+    }))
     url = 'http://127.0.0.1:3080/?token=test'
     fetch = vi.fn(async () => Response.json({ hasApiKey: true, writable: true, localePreference: null }))
     readonly ready = deferred()
@@ -216,6 +220,7 @@ const harness = await vi.hoisted(async () => {
     get publishUpdate() { return publishUpdate! },
     set publishUpdate(value: (state: DesktopUpdateState) => DesktopUpdateState) { publishUpdate = value },
     dialog: { showOpenDialog: vi.fn(), showErrorBox: vi.fn(), showMessageBox: vi.fn() },
+    clipboard: { writeText: vi.fn(async () => {}) },
     openExternal: vi.fn(async () => {}),
     protocolHandle: vi.fn<(scheme: string, handler: (request: Request) => Response | Promise<Response>) => void>(),
     applyRelease: vi.fn(() => { preparing.resolve(); return prepared.promise }),
@@ -278,6 +283,7 @@ vi.mock('electron', () => ({
   app: harness.app,
   BrowserWindow: harness.FakeWindow,
   dialog: harness.dialog,
+  clipboard: harness.clipboard,
   shell: { openExternal: harness.openExternal },
   nativeTheme: harness.nativeTheme,
   net: { fetch: vi.fn() },
@@ -973,7 +979,7 @@ describe('desktop main startup', () => {
     expect(() => handler(event, 'application', NaN, 34)).toThrow('invalid popup request')
     const application = handler(event, 'application', 48, 34)
     expect(harness.menu.buildFromTemplate.mock.lastCall![0].map(item => item.label ?? item.type)).toEqual([
-      '关于 DeepSeek Harness', 'separator', '检查更新…', '复制网页链接', '管理 dsh 命令…', 'separator', '退出',
+      '关于 DeepSeek Harness', 'separator', '检查更新…', '复制网页链接', '已配对设备…', '管理 dsh 命令…', 'separator', '退出',
     ])
     expect(harness.popup.mock.lastCall![0]).toMatchObject({ window, x: 48, y: 34 })
     expect(harness.popup.mock.lastCall![0].callback).toBeTypeOf('function')
@@ -995,8 +1001,50 @@ describe('desktop main startup', () => {
     await edit
   })
 
-  it.each(['darwin', 'linux'] as const)('adds the product File menu and standard window commands only on macOS (%s)', async (platform) => {
-    vi.spyOn(process, 'platform', 'get').mockReturnValue(platform)
+  it('lists paired browsers, confirms a revocation, and adopts a rotated pairing code', async () => {
+    vi.spyOn(process, 'platform', 'get').mockReturnValue('darwin')
+    const host = await readyWorkspace()
+    const pairedDevices = (): MenuItemConstructorOptions =>
+      applicationMenuItems().find(item => item.label === en.pairedDevicesMenu)!
+    const click = async (item: MenuItemConstructorOptions): Promise<void> => {
+      item.click!(undefined as never, undefined, undefined as never)
+      // This suite runs on fake timers, so pending promises settle by advancing them.
+      await vi.advanceTimersByTimeAsync(0)
+    }
+
+    await click(pairedDevices())
+    expect(host.browserSessions).toHaveBeenLastCalledWith('list', undefined)
+    const popup = harness.menu.buildFromTemplate.mock.lastCall![0]
+    expect(popup.map((item: MenuItemConstructorOptions) => item.label ?? item.type)).toEqual([
+      '1 paired', 'separator', expect.stringContaining('Phone/1.0'), 'separator', en.pairedDeviceRotateItem,
+    ])
+    expect(harness.popup).toHaveBeenLastCalledWith({ window: harness.windows[0] })
+
+    // A cancelled confirmation leaves the session alone.
+    harness.dialog.showMessageBox.mockResolvedValueOnce({ response: 1 })
+    const revoke = (popup[2]!.submenu as MenuItemConstructorOptions[])[0]!
+    expect(revoke.label).toBe(en.pairedDeviceRevokeItem)
+    await click(revoke)
+    const confirmation = harness.dialog.showMessageBox.mock.lastCall![0] as { message?: string; detail?: string; cancelId?: number }
+    expect(confirmation.message).toBe(en.pairedDeviceRevokeTitle)
+    expect(confirmation.detail).toContain('Phone/1.0')
+    expect(confirmation.cancelId).toBe(1)
+    expect(host.browserSessions).not.toHaveBeenCalledWith('revoke', expect.anything())
+
+    // A confirmed one ends exactly that session.
+    harness.dialog.showMessageBox.mockResolvedValueOnce({ response: 0 })
+    await click(revoke)
+    expect(host.browserSessions).toHaveBeenLastCalledWith('revoke', 'phone')
+
+    // Rotation adopts the replacement code, so Copy Web Link stops sharing the old one.
+    harness.clipboard.writeText.mockClear()
+    await click(popup[4]!)
+    expect(host.browserSessions).toHaveBeenLastCalledWith('rotate', undefined)
+    applicationMenuItems().find(item => item.label === en.copyWebLinkMenu)!.click!(undefined as never, undefined, undefined as never)
+    expect(harness.clipboard.writeText).toHaveBeenLastCalledWith('http://127.0.0.1:3080/?token=rotated')
+  })
+
+  it.each(['darwin', 'linux'] as const)('adds the product File menu and standard window commands only on macOS (%s)', async (platform) => {    vi.spyOn(process, 'platform', 'get').mockReturnValue(platform)
     await import('../src/main.ts')
     await harness.preparing.promise
     const describeItem = (item: MenuItemConstructorOptions): string | undefined =>
@@ -1010,8 +1058,8 @@ describe('desktop main startup', () => {
       : ['Application', 'editMenu'])
     const application = template[0]!.submenu as MenuItemConstructorOptions[]
     expect(application.filter(item => item.visible !== false).map(describeItem)).toEqual(platform === 'darwin'
-      ? ['about', 'separator', en.checkUpdatesMenu, en.copyWebLinkMenu, en.cliCommandMenu, 'separator', 'hide', 'hideOthers', 'unhide', 'separator', 'quit']
-      : ['about', 'separator', en.checkUpdatesMenu, en.copyWebLinkMenu, 'separator', 'quit'])
+      ? ['about', 'separator', en.checkUpdatesMenu, en.copyWebLinkMenu, en.pairedDevicesMenu, en.cliCommandMenu, 'separator', 'hide', 'hideOthers', 'unhide', 'separator', 'quit']
+      : ['about', 'separator', en.checkUpdatesMenu, en.copyWebLinkMenu, en.pairedDevicesMenu, 'separator', 'quit'])
     expect(harness.menu.setApplicationMenu).toHaveBeenCalledOnce()
   })
 
