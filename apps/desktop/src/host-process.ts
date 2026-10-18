@@ -212,6 +212,11 @@ export class DesktopHostProcess {
     private readonly onPlatformSession?: (session: PlatformSession | null) => void,
   ) {}
 
+  /** The child's process id while it runs, for out-of-band tree termination by build tooling. */
+  get pid(): number | undefined {
+    return this.child?.pid
+  }
+
   /**
    * Start this child once and await its Web application URL.
    * @returns Ready facts supplied by the child after application startup.

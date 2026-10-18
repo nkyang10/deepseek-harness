@@ -10,6 +10,14 @@ export interface DesktopSettings {
   readonly updates: {
     readonly allowTestAuthPopupWindow: boolean
   }
+  readonly window: {
+    /**
+     * Whether closing the primary window quits the application instead of
+     * hiding it to the Windows tray. The tray and the one-time background
+     * notice are not created when this is set.
+     */
+    readonly closeQuits: boolean
+  }
 }
 
 function record(value: unknown): value is Record<string, unknown> {
@@ -24,7 +32,7 @@ function record(value: unknown): value is Record<string, unknown> {
 export function readDesktopSettings(userData: string): DesktopSettings {
   const directory = join(userData, 'desktop')
   const path = join(directory, 'settings.json')
-  const defaults: DesktopSettings = { updates: { allowTestAuthPopupWindow: false } }
+  const defaults: DesktopSettings = { updates: { allowTestAuthPopupWindow: false }, window: { closeQuits: false } }
   try {
     let raw: string
     try { raw = readFileSync(path, 'utf8') } catch (error) {
@@ -37,14 +45,19 @@ export function readDesktopSettings(userData: string): DesktopSettings {
       raw = readFileSync(path, 'utf8')
     }
     const value: unknown = JSON.parse(raw)
-    if (!record(value) || (value.updates !== undefined && !record(value.updates))) {
-      throw new Error('expected a JSON object with an optional updates object')
+    if (!record(value) || (value.updates !== undefined && !record(value.updates))
+      || (value.window !== undefined && !record(value.window))) {
+      throw new Error('expected a JSON object with optional updates and window objects')
     }
     const allow = value.updates?.allowTestAuthPopupWindow
     if (allow !== undefined && typeof allow !== 'boolean') {
       throw new Error('updates.allowTestAuthPopupWindow must be true or false')
     }
-    return { updates: { allowTestAuthPopupWindow: allow ?? false } }
+    const closeQuits = value.window?.closeQuits
+    if (closeQuits !== undefined && typeof closeQuits !== 'boolean') {
+      throw new Error('window.closeQuits must be true or false')
+    }
+    return { updates: { allowTestAuthPopupWindow: allow ?? false }, window: { closeQuits: closeQuits ?? false } }
   } catch (error) {
     try {
       console.warn(`desktop settings: ${path}: using defaults because settings could not be loaded`, error)

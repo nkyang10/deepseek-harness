@@ -22,8 +22,8 @@ it('creates a discoverable default file on first launch without touching other p
   const { userData, path } = fixture()
   rmSync(join(userData, 'desktop'), { recursive: true })
   writeFileSync(join(userData, 'keybindings.json'), 'existing shortcuts\n')
-  expect(readDesktopSettings(userData)).toEqual({ updates: { allowTestAuthPopupWindow: false } })
-  expect(readFileSync(path, 'utf8')).toBe('{\n  "updates": {\n    "allowTestAuthPopupWindow": false\n  }\n}\n')
+  expect(readDesktopSettings(userData)).toEqual({ updates: { allowTestAuthPopupWindow: false }, window: { closeQuits: false } })
+  expect(readFileSync(path, 'utf8')).toBe('{\n  "updates": {\n    "allowTestAuthPopupWindow": false\n  },\n  "window": {\n    "closeQuits": false\n  }\n}\n')
   expect(readFileSync(join(userData, 'keybindings.json'), 'utf8')).toBe('existing shortcuts\n')
 })
 
@@ -47,6 +47,25 @@ it('loads explicit opt-in and opt-out on the next read without changing an earli
   expect(previous.updates.allowTestAuthPopupWindow).toBe(false)
   expect(readDesktopSettings(userData).updates.allowTestAuthPopupWindow).toBe(true)
 })
+
+it('loads window.closeQuits and defaults it to false', () => {
+  const { userData, path } = fixture()
+  writeFileSync(path, '{"window":{"closeQuits":true}}')
+  expect(readDesktopSettings(userData).window.closeQuits).toBe(true)
+  writeFileSync(path, '{"window":{}}')
+  expect(readDesktopSettings(userData).window.closeQuits).toBe(false)
+  writeFileSync(path, '{}')
+  expect(readDesktopSettings(userData).window.closeQuits).toBe(false)
+})
+
+it.each(['{"window":null}', '{"window":[]}', '{"window":{"closeQuits":"true"}}', '{"window":{"closeQuits":1}}'])(
+  'reports an invalid window section with its path and preserves the original: %s', (raw) => {
+    const { userData, path } = fixture()
+    writeFileSync(path, raw)
+    expect(readDesktopSettings(userData).window.closeQuits).toBe(false)
+    expect(console.warn).toHaveBeenCalledWith(expect.stringContaining(path), expect.any(Error))
+    expect(readFileSync(path, 'utf8')).toBe(raw)
+  })
 
 it.each(['', '{', 'null', '[]', '{"updates":null}', '{"updates":[]}',
   '{"updates":{"allowTestAuthPopupWindow":"false"}}', '{"updates":{"allowTestAuthPopupWindow":1}}',
