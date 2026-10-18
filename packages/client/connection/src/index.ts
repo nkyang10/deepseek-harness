@@ -36,6 +36,7 @@ export type {
   RpcMessage,
   ServerResponse,
 } from './rpc.ts'
+export type { BrowserDeviceId, BrowserSession } from './rpc.ts'
 export type { PeerId, PeerScope, RemoteInvocation } from '@deepseek-ai/dsh-typert-protocol'
 export { RpcId, transportError } from './rpc.ts'
 export { OperatorPeer } from './operator-peer.ts'
@@ -132,7 +133,7 @@ export async function apply(ctx: Context, config?: ConnectionConfig): Promise<vo
   const connection = new HostConnectionService(
     ctx,
     trustedHosts,
-    await BrowserAuth.create(ctx.root, ctx.credentials, cookieMaxAgeDays),
+    await BrowserAuth.create(ctx.credentials, cookieMaxAgeDays),
   )
   ctx.inject(['webServer'], (webCtx) => {
     assertImageBodyCapacity(webCtx, maxRequestBodyBytes)

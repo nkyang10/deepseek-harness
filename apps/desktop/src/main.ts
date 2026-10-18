@@ -24,7 +24,7 @@ import {
 } from 'electron'
 import { resolveDesktopPaths } from './paths.ts'
 import { DesktopProjectManager } from './project-manager.ts'
-import { DesktopHostFatalError, DesktopHostProcess, DesktopHostUncleanExitError } from './host-process.ts'
+import { DesktopHostFatalError, DesktopHostProcess, DesktopHostUncleanExitError, type DesktopBrowserSession } from './host-process.ts'
 import { DesktopPlatformView, PLATFORM_IPC, platformBounds } from './platform-view.ts'
 import { installDesktopDirectoryPicker } from './directory-picker.ts'
 import { installMicrophonePermissions } from './microphone-permissions.ts'
@@ -508,11 +508,82 @@ async function main(): Promise<void> {
       },
       updateTasks: (action: 'inspect' | 'lock' | 'unlock') => host.updateTasks(action),
       inspectQuit: () => host.inspectQuit(),
+      browserSessions: (action: 'list' | 'revoke' | 'rotate', deviceId?: string) => host.browserSessions(action, deviceId),
     }
   }, (state) => {
     if (state.phase === 'error') reportFatal(state.failure, 'host')
     else if (!shuttingDown) backendReady = state.phase === 'ready'
   })
+
+  /** One paired browser as the device list renders it. */
+  const describeBrowserSession = (session: DesktopBrowserSession): string => {
+    const paired = new Date(session.pairedAt).toLocaleString(currentDesktopLocale().id)
+    const agent = session.userAgent === '' ? locale.messages.pairedDeviceUnknown : session.userAgent
+    return `${agent} — ${formatDesktopMessage(locale.messages.pairedDevicePaired, { date: paired })}`
+  }
+  const revokeBrowserSession = async (session: DesktopBrowserSession): Promise<void> => {
+    const messages = currentDesktopLocale().messages
+    const confirmed = await ordinaryMessageBox({
+      type: 'warning',
+      message: messages.pairedDeviceRevokeTitle,
+      detail: describeBrowserSession(session),
+      buttons: [messages.pairedDeviceRevokeItem, locale.messages.cancel],
+      defaultId: 1,
+      cancelId: 1,
+      noLink: true,
+    })
+    if (confirmed.response !== 0) return
+    const host = backend.host
+    if (host === undefined) return
+    try {
+      await host.browserSessions('revoke', session.id)
+    } catch (error) {
+      console.error(error)
+    }
+  }
+  const rotatePairingCode = async (): Promise<void> => {
+    const host = backend.host
+    if (host === undefined) return
+    let rotated: { url?: string }
+    try {
+      rotated = await host.browserSessions('rotate')
+    } catch (error) {
+      console.error(error)
+      return
+    }
+    // Every copied link carries the code that was current when it was copied;
+    // adopting the replacement keeps Copy Web Link and the shell window on the
+    // code that pairs now.
+    if (rotated.url !== undefined) hostUrl = rotated.url
+  }
+  const showBrowserSessions = async (): Promise<void> => {
+    const host = backend.host
+    if (host === undefined) return
+    let sessions: readonly DesktopBrowserSession[]
+    try {
+      ({ sessions } = await host.browserSessions('list'))
+    } catch (error) {
+      console.error(error)
+      return
+    }
+    const messages = currentDesktopLocale().messages
+    const template: MenuItemConstructorOptions[] = [
+      { label: formatDesktopMessage(messages.pairedDeviceCount, { count: String(sessions.length) }), enabled: false },
+      { type: 'separator' },
+      ...sessions.map(session => ({
+        label: describeBrowserSession(session),
+        submenu: [{
+          label: messages.pairedDeviceRevokeItem,
+          click: () => { void revokeBrowserSession(session) },
+        }],
+      })),
+      { type: 'separator' },
+      { label: messages.pairedDeviceRotateItem, click: () => { void rotatePairingCode() } },
+    ]
+    const popupWindow = currentMainWindow()
+    if (popupWindow === undefined) return
+    Menu.buildFromTemplate(template).popup({ window: popupWindow })
+  }
 
   const updateErrors = new WeakMap<DesktopUpdateState, Promise<void>>()
   const showUpdateFailure = (state: DesktopUpdateState): Promise<void> => {
@@ -958,9 +1029,12 @@ async function main(): Promise<void> {
     { type: 'separator' },
     { label: currentDesktopLocale().messages.checkUpdatesMenu, click: () => { void openUpdatePrompt(true) } },
     { label: currentDesktopLocale().messages.copyWebLinkMenu, click: () => {
-      // The URL carries the process launch token; pasting it into a browser
-      // signs that browser in, so the user owns where it goes.
+      // The URL carries the pairing code; pasting it into a browser pairs that
+      // browser, so the user owns where it goes.
       if (hostUrl !== undefined) void clipboard.writeText(hostUrl)
+    } },
+    { label: currentDesktopLocale().messages.pairedDevicesMenu, click: () => {
+      void showBrowserSessions().catch((error: unknown) => { console.error(error) })
     } },
     ...process.platform === 'darwin' || process.platform === 'win32'
       ? [{ label: currentDesktopLocale().messages.cliCommandMenu, click: () => { void commandManager.show() } }] : [],

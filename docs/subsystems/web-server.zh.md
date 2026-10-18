@@ -124,21 +124,43 @@ requestRejection(request: ConnectionTrustRequest): ConnectionRequestRejection
 admit(request: ConnectionTrustRequest): PeerAdmission
 
 /**
- * Authenticate one frontend index request, owning a token redirect or 401.
+ * Authenticate one frontend index request, owning a pairing redirect or 401.
  * The cookie this mints is `Secure` when the mounted Web carrier serves TLS,
  * which only that listener's protocol decides.
  * @param request - root or configured-index HTTP request.
  * @param response - response owned when the result is false.
  * @returns true only when the frontend may serve index.html.
  */
-authorizeIndex(request: ConnectionIndexRequest, response: ConnectionIndexResponse): boolean
+authorizeIndex(request: ConnectionIndexRequest, response: ConnectionIndexResponse): Promise<boolean>
 
 /**
- * Add the fresh process token to an ordinary Web application URL.
+ * Add the deployment's durable pairing code to an ordinary Web application
+ * URL. Whoever opens the result pairs a new browser session.
  * @param baseUrl - clean application URL whose authority and mount are preserved.
- * @returns tokenized URL for initial login; a mount proxy strips its prefix before {@link authorizeIndex}.
+ * @returns pairing URL for a new browser; a mount proxy strips its prefix before {@link authorizeIndex}.
  */
 authenticatedUrl(baseUrl: string): string
+
+/**
+ * List the browsers currently paired with this deployment, newest pairing
+ * last, after writing back the last-seen times collected while answering
+ * requests and dropping sessions whose lifetime has passed.
+ * @returns the live sessions.
+ */
+listBrowserSessions(): Promise<readonly BrowserSession[]>
+
+/**
+ * End one paired browser's access. Every cookie naming that session stops
+ * verifying at once; other sessions and the pairing code are untouched.
+ * @param id - the session to revoke.
+ */
+revokeBrowserSession(id: BrowserDeviceId): Promise<void>
+
+/**
+ * Replace the pairing code, so previously shared links no longer pair new
+ * browsers while already paired browsers keep their sessions.
+ */
+rotatePairingCode(): Promise<void>
 ```
 
 Source: [`packages/client/connection/src/rpc.ts`](../../packages/client/connection/src/rpc.ts)

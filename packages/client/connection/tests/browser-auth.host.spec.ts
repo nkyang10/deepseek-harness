@@ -1,4 +1,4 @@
-/** Browser launch-token and persistent-cookie behavior. */
+/** Browser pairing, per-device session cookies, and revocation behavior. */
 
 import { createHmac } from 'node:crypto'
 import { afterEach, describe, expect, it, vi } from 'vitest'
@@ -6,6 +6,8 @@ import type { CredentialProvider } from '@deepseek-ai/dsh-credentials'
 import { BrowserAuth } from '../src/browser-auth.ts'
 import type { ConnectionIndexRequest, ConnectionIndexResponse } from '../src/rpc.ts'
 import { RecordCredentials } from './browser-credentials.ts'
+
+const UNAUTHORIZED_BODY = 'dsh web authentication required; pair again from the application that serves this page.\n'
 
 function signedCookie(store: RecordCredentials, name: string, payload: unknown): string {
   const body = typeof payload === 'string'
@@ -51,17 +53,14 @@ function credentials(store: RecordCredentials): CredentialProvider {
   return store as unknown as CredentialProvider
 }
 
-function createAuth(
-  store: RecordCredentials,
-  maxAgeDays = 30,
-  processOwner: object = {},
-): Promise<BrowserAuth> {
-  return BrowserAuth.create(processOwner, credentials(store), maxAgeDays)
+function createAuth(store: RecordCredentials, maxAgeDays = 30): Promise<BrowserAuth> {
+  return BrowserAuth.create(credentials(store), maxAgeDays)
 }
 
 function request(url: string, authority = '127.0.0.1:3080', init?: {
   cookie?: string
   method?: string
+  userAgent?: string
 }): ConnectionIndexRequest {
   return {
     method: init?.method ?? 'GET',
@@ -69,22 +68,27 @@ function request(url: string, authority = '127.0.0.1:3080', init?: {
     headers: {
       host: authority,
       ...init?.cookie === undefined ? {} : { cookie: init.cookie },
+      ...init?.userAgent === undefined ? {} : { 'user-agent': init.userAgent },
     },
   }
 }
 
-function exchange(
+/** Exchange the pairing code the way a browser opening the shared link does. */
+async function exchange(
   auth: BrowserAuth,
   authority = '127.0.0.1:3080',
   secure = false,
-): { cookie: string; launchUrl: string; state: ResponseState } {
-  const launchUrl = auth.authenticatedUrl(`http://${authority}`)
-  const target = new URL(launchUrl)
+  init?: { cookie?: string; userAgent?: string },
+): Promise<{ cookie: string; pairingUrl: string; state: ResponseState }> {
+  const pairingUrl = auth.authenticatedUrl(`http://${authority}`)
+  const target = new URL(pairingUrl)
   const res = response()
-  expect(auth.authorizeIndex(request(`${target.pathname}${target.search}`, authority), res.value, secure)).toBe(false)
+  expect(await auth.authorizeIndex(
+    request(`${target.pathname}${target.search}`, authority, init), res.value, secure,
+  )).toBe(false)
   const setCookie = res.state.headers?.['set-cookie']
-  if (setCookie === undefined) throw new Error('token exchange did not set a cookie')
-  return { cookie: setCookie.split(';', 1)[0]!, launchUrl, state: res.state }
+  if (setCookie === undefined) throw new Error('pairing did not set a cookie')
+  return { cookie: setCookie.split(';', 1)[0]!, pairingUrl, state: res.state }
 }
 
 afterEach(() => {
@@ -92,11 +96,10 @@ afterEach(() => {
 })
 
 describe('BrowserAuth', () => {
-  it('mints one process token and a persistent authority-bound cookie', async () => {
+  it('pairs one browser and mints a persistent authority-bound session cookie', async () => {
     const store = new RecordCredentials()
-    const processOwner = {}
-    const first = await createAuth(store, 30, processOwner)
-    const login = exchange(first)
+    const auth = await createAuth(store)
+    const login = await exchange(auth)
 
     expect(login.state).toMatchObject({
       status: 303,
@@ -108,30 +111,37 @@ describe('BrowserAuth', () => {
     })
     expect(login.state.headers?.['set-cookie']).toMatch(/; Max-Age=2592000; Path=\/; Expires=.*; HttpOnly; SameSite=Strict$/u)
     expect(login.state.headers?.['set-cookie']).not.toContain('Secure')
-    expect(first.isAuthenticated(request('/', '127.0.0.1:3080', { cookie: login.cookie }))).toBe(true)
-    expect(first.isAuthenticated({
+    expect(auth.isAuthenticated(request('/', '127.0.0.1:3080', { cookie: login.cookie }))).toBe(true)
+    expect(auth.isAuthenticated({
       headers: new Headers({ host: '127.0.0.1:3080', cookie: login.cookie }),
     })).toBe(true)
-    expect(first.isAuthenticated({ headers: new Headers() })).toBe(false)
-    expect(first.isAuthenticated(request('/', 'localhost:3080', { cookie: login.cookie }))).toBe(false)
-    expect(first.isAuthenticated(request('/', '127.0.0.1:3081', { cookie: login.cookie }))).toBe(false)
+    expect(auth.isAuthenticated({ headers: new Headers() })).toBe(false)
+    expect(auth.isAuthenticated(request('/', 'localhost:3080', { cookie: login.cookie }))).toBe(false)
+    expect(auth.isAuthenticated(request('/', '127.0.0.1:3081', { cookie: login.cookie }))).toBe(false)
+    expect(await auth.listSessions()).toHaveLength(1)
+  })
 
-    const reloaded = await createAuth(store, 30, processOwner)
-    expect(reloaded.authenticatedUrl('http://127.0.0.1:3080')).toBe(login.launchUrl)
+  it('keeps one durable pairing code and its sessions across Host restarts', async () => {
+    const store = new RecordCredentials()
+    const auth = await createAuth(store)
+    const login = await exchange(auth)
+
+    const reloaded = await createAuth(store)
+    expect(reloaded.authenticatedUrl('http://127.0.0.1:3080')).toBe(login.pairingUrl)
     expect(reloaded.isAuthenticated(request('/', '127.0.0.1:3080', { cookie: login.cookie }))).toBe(true)
 
     const restarted = await createAuth(store)
     expect(new URL(restarted.authenticatedUrl('http://127.0.0.1:3080')).searchParams.get('token'))
-      .not.toBe(new URL(login.launchUrl).searchParams.get('token'))
+      .toBe(new URL(login.pairingUrl).searchParams.get('token'))
     expect(restarted.isAuthenticated(request('/', '127.0.0.1:3080', { cookie: login.cookie }))).toBe(true)
-    const staleUrl = new URL(login.launchUrl)
-    const redirected = response()
-    expect(restarted.authorizeIndex(request(
-      `${staleUrl.pathname}${staleUrl.search}`,
-      '127.0.0.1:3080',
-      { cookie: login.cookie },
-    ), redirected.value)).toBe(false)
-    expect(redirected.state).toEqual({
+
+    // A link whose code was superseded still resolves for an already paired
+    // browser: the stale query is dropped and the existing cookie is kept.
+    const reused = response()
+    expect(await restarted.authorizeIndex(
+      request('/?token=wrong', '127.0.0.1:3080', { cookie: login.cookie }), reused.value,
+    )).toBe(false)
+    expect(reused.state).toEqual({
       status: 303,
       headers: {
         'cache-control': 'no-store',
@@ -139,12 +149,133 @@ describe('BrowserAuth', () => {
         'referrer-policy': 'no-referrer',
       },
     })
+
+    const fresh = response()
+    const code = new URL(login.pairingUrl).searchParams.get('token') as string
+    expect(await restarted.authorizeIndex(
+      request(`/?token=${code}`, '127.0.0.1:3080'), fresh.value,
+    )).toBe(false)
+    expect(fresh.state.status).toBe(303)
+  })
+
+  it('gives every browser its own listed session', async () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date('2026-08-24T00:00:00.000Z'))
+    const auth = await createAuth(new RecordCredentials())
+    const phone = await exchange(auth, '127.0.0.1:3080', false, { userAgent: 'Phone/1.0' })
+    vi.setSystemTime(new Date('2026-08-24T00:05:00.000Z'))
+    const laptop = await exchange(auth, '127.0.0.1:3080', false, { userAgent: 'Laptop/2.0' })
+
+    const sessions = await auth.listSessions()
+    const phonePaired = Date.parse('2026-08-24T00:00:00.000Z')
+    const laptopPaired = Date.parse('2026-08-24T00:05:00.000Z')
+    const dayMilliseconds = 24 * 60 * 60 * 1000
+    expect(sessions).toHaveLength(2)
+    expect(sessions[0]).toMatchObject({ userAgent: 'Phone/1.0', pairedAt: phonePaired, lastSeenAt: phonePaired, expiresAt: phonePaired + 30 * dayMilliseconds })
+    expect(sessions[1]).toMatchObject({ userAgent: 'Laptop/2.0', pairedAt: laptopPaired, lastSeenAt: laptopPaired, expiresAt: laptopPaired + 30 * dayMilliseconds })
+    expect(typeof sessions[0]!.id).toBe('string')
+    expect(sessions[0]!.id).not.toBe(sessions[1]!.id)
+    expect(auth.isAuthenticated(request('/', '127.0.0.1:3080', { cookie: phone.cookie }))).toBe(true)
+    expect(auth.isAuthenticated(request('/', '127.0.0.1:3080', { cookie: laptop.cookie }))).toBe(true)
+  })
+
+  it('keeps one identity when the same browser pairs again, refreshing only its lifetime', async () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date('2026-08-24T00:00:00.000Z'))
+    const auth = await createAuth(new RecordCredentials())
+    const first = await exchange(auth, '127.0.0.1:3080', false, { userAgent: 'Phone/1.0' })
+    const [firstSession] = await auth.listSessions()
+
+    vi.setSystemTime(new Date('2026-09-01T00:00:00.000Z'))
+    const again = await exchange(auth, '127.0.0.1:3080', false, { cookie: first.cookie, userAgent: 'Phone/1.0' })
+    const sessions = await auth.listSessions()
+
+    expect(sessions).toHaveLength(1)
+    expect(sessions[0]!.id).toBe(firstSession!.id)
+    expect(sessions[0]!.pairedAt).toBe(firstSession!.pairedAt)
+    expect(sessions[0]!.expiresAt).toBeGreaterThan(firstSession!.expiresAt)
+    expect(auth.isAuthenticated(request('/', '127.0.0.1:3080', { cookie: again.cookie }))).toBe(true)
+  })
+
+  it('revokes one browser without disturbing the others or the pairing code', async () => {
+    const store = new RecordCredentials()
+    const auth = await createAuth(store)
+    const phone = await exchange(auth, '127.0.0.1:3080', false, { userAgent: 'Phone/1.0' })
+    const laptop = await exchange(auth, '127.0.0.1:3080', false, { userAgent: 'Laptop/2.0' })
+    const [, laptopSession] = await auth.listSessions()
+
+    await auth.revokeSession((await auth.listSessions())[0]!.id)
+
+    expect(auth.isAuthenticated(request('/', '127.0.0.1:3080', { cookie: phone.cookie }))).toBe(false)
+    expect(auth.isAuthenticated(request('/', '127.0.0.1:3080', { cookie: laptop.cookie }))).toBe(true)
+    const remaining = await auth.listSessions()
+    expect(remaining).toHaveLength(1)
+    expect(remaining[0]).toMatchObject({ id: laptopSession!.id, userAgent: laptopSession!.userAgent })
+
+    // Revocation survives a restart, and the revoked browser cannot re-pair silently.
+    const restarted = await createAuth(store)
+    expect(restarted.isAuthenticated(request('/', '127.0.0.1:3080', { cookie: phone.cookie }))).toBe(false)
+    expect(restarted.authenticatedUrl('http://127.0.0.1:3080')).toBe(auth.authenticatedUrl('http://127.0.0.1:3080'))
+    expect((await restarted.listSessions())[0]!.id).toBe(laptopSession!.id)
+  })
+
+  it('rotates the pairing code while already paired browsers stay signed in', async () => {
+    const store = new RecordCredentials()
+    const auth = await createAuth(store)
+    const phone = await exchange(auth, '127.0.0.1:3080', false, { userAgent: 'Phone/1.0' })
+    const oldUrl = new URL(auth.authenticatedUrl('http://127.0.0.1:3080'))
+    const oldCode = oldUrl.searchParams.get('token') as string
+
+    await auth.rotatePairingCode()
+
+    const rotatedUrl = new URL(auth.authenticatedUrl('http://127.0.0.1:3080'))
+    expect(rotatedUrl.searchParams.get('token')).not.toBe(oldCode)
+    expect(auth.isAuthenticated(request('/', '127.0.0.1:3080', { cookie: phone.cookie }))).toBe(true)
+
+    const denied = response()
+    expect(await auth.authorizeIndex(request(`/?token=${oldCode}`, '127.0.0.1:3080'), denied.value)).toBe(false)
+    expect(denied.state.status).toBe(401)
+
+    const restarted = await createAuth(store)
+    expect(new URL(restarted.authenticatedUrl('http://127.0.0.1:3080')).searchParams.get('token'))
+      .toBe(rotatedUrl.searchParams.get('token'))
+  })
+
+  it('reports last-seen activity collected while answering requests and drops expired sessions', async () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date('2026-08-24T00:00:00.000Z'))
+    const auth = await createAuth(new RecordCredentials(), 1)
+    const phone = await exchange(auth, '127.0.0.1:3080', false, { userAgent: 'Phone/1.0' })
+
+    vi.setSystemTime(new Date('2026-08-24T06:00:00.000Z'))
+    expect(auth.isAuthenticated(request('/', '127.0.0.1:3080', { cookie: phone.cookie }))).toBe(true)
+    expect(await auth.listSessions()).toEqual([
+      expect.objectContaining({ lastSeenAt: Date.parse('2026-08-24T06:00:00.000Z') }),
+    ])
+
+    vi.setSystemTime(new Date('2026-08-26T00:00:00.000Z'))
+    expect(auth.isAuthenticated(request('/', '127.0.0.1:3080', { cookie: phone.cookie }))).toBe(false)
+    expect(await auth.listSessions()).toEqual([])
+  })
+
+  it('upgrades a record that predates sessions, keeping its signing secret', async () => {
+    const store = new RecordCredentials()
+    const secret = Buffer.alloc(32, 7).toString('base64url')
+    store.record = { kind: 'grant', payload: { version: 1, secret } }
+    const auth = await createAuth(store)
+
+    expect(await auth.listSessions()).toEqual([])
+    expect(store.record).toMatchObject({
+      kind: 'grant',
+      payload: { version: 2, secret },
+    })
+    expect(auth.authenticatedUrl('http://127.0.0.1:3080')).toContain('token=')
   })
 
   it('keeps HTTPS port 443 distinct from HTTP port 80 with one signing secret', async () => {
     const auth = await createAuth(new RecordCredentials())
-    const plain = exchange(auth, 'harness.example')
-    const tls = exchange(auth, 'harness.example', true)
+    const plain = await exchange(auth, 'harness.example')
+    const tls = await exchange(auth, 'harness.example', true)
     expect(auth.isAuthenticated(request('/', 'harness.example', { cookie: plain.cookie }), true)).toBe(false)
     expect(auth.isAuthenticated(request('/', 'harness.example', { cookie: tls.cookie }), true)).toBe(true)
     expect(auth.isAuthenticated(request('/', 'harness.example:443', { cookie: tls.cookie }), true)).toBe(true)
@@ -154,13 +285,13 @@ describe('BrowserAuth', () => {
   it('rejects HTTP cookie replay after enabling TLS on the same authority', async () => {
     const store = new RecordCredentials()
     const authority = 'harness.example:3080'
-    const plain = exchange(await createAuth(store), authority)
+    const plain = await exchange(await createAuth(store), authority)
     const restarted = await createAuth(store)
     const denied = response()
-    expect(restarted.authorizeIndex(request('/', authority, { cookie: plain.cookie }), denied.value, true)).toBe(false)
+    expect(await restarted.authorizeIndex(request('/', authority, { cookie: plain.cookie }), denied.value, true)).toBe(false)
     expect(denied.state.status).toBe(401)
 
-    const tls = exchange(restarted, authority, true)
+    const tls = await exchange(restarted, authority, true)
     expect(tls.state.headers?.['set-cookie']).toContain('; Secure')
     expect(restarted.isAuthenticated(request('/', authority, { cookie: tls.cookie }), true)).toBe(true)
     expect(restarted.isAuthenticated(request('/', authority, { cookie: tls.cookie }))).toBe(false)
@@ -169,7 +300,7 @@ describe('BrowserAuth', () => {
     expect(restarted.isAuthenticated(request('/', authority, { cookie: `${tlsName}=${plainValue}` }), true)).toBe(false)
   })
 
-  it('preserves the caller authority and mount while adding only this process token', async () => {
+  it('preserves the caller authority and mount while adding only the pairing code', async () => {
     const auth = await createAuth(new RecordCredentials())
     const mounted = new URL(auth.authenticatedUrl('https://gateway.example/tools/dsh/'))
     expect(mounted.origin).toBe('https://gateway.example')
@@ -182,9 +313,9 @@ describe('BrowserAuth', () => {
     expect(loopback.searchParams.get('token')).toBe(mounted.searchParams.get('token'))
 
     // The proxy preserves the browser-facing Host and strips the mount.
-    const token = mounted.searchParams.get('token')
+    const code = mounted.searchParams.get('token')
     const exchanged = response()
-    expect(auth.authorizeIndex(request(`/?token=${String(token)}`, 'gateway.example'), exchanged.value)).toBe(false)
+    expect(await auth.authorizeIndex(request(`/?token=${String(code)}`, 'gateway.example'), exchanged.value)).toBe(false)
     const setCookie = exchanged.state.headers?.['set-cookie']
     if (setCookie === undefined) throw new Error('mount exchange did not set a cookie')
     expect(auth.isAuthenticated(request(
@@ -194,9 +325,9 @@ describe('BrowserAuth', () => {
 
   it('accepts the cookie for index serving and gives every unauthenticated request one response', async () => {
     const auth = await createAuth(new RecordCredentials())
-    const { cookie } = exchange(auth)
+    const { cookie } = await exchange(auth)
     const allowed = response()
-    expect(auth.authorizeIndex(request('/index.html', '127.0.0.1:3080', { cookie }), allowed.value)).toBe(true)
+    expect(await auth.authorizeIndex(request('/index.html', '127.0.0.1:3080', { cookie }), allowed.value)).toBe(true)
     expect(allowed.state).toEqual({})
 
     for (const candidate of [
@@ -207,24 +338,22 @@ describe('BrowserAuth', () => {
       request(auth.authenticatedUrl('http://127.0.0.1:3080'), '127.0.0.1:3080', { method: 'HEAD' }),
     ]) {
       const denied = response()
-      expect(auth.authorizeIndex(candidate, denied.value)).toBe(false)
+      expect(await auth.authorizeIndex(candidate, denied.value)).toBe(false)
       expect(denied.state.status).toBe(401)
       expect(denied.state.headers).toEqual({
         'cache-control': 'no-store',
         'content-type': 'text/plain; charset=utf-8',
       })
-      expect(denied.state.body).toBe(candidate.method === 'HEAD'
-        ? undefined
-        : 'dsh web authentication required; reopen the URL printed by dsh web.\n')
+      expect(denied.state.body).toBe(candidate.method === 'HEAD' ? undefined : UNAUTHORIZED_BODY)
     }
   })
 
-  it('rejects tampering, expiry, future issuance, and a longer lifetime than configured', async () => {
+  it('rejects a tampered, truncated, or unsigned cookie', async () => {
     vi.useFakeTimers()
     vi.setSystemTime(new Date('2026-08-24T00:00:00.000Z'))
     const store = new RecordCredentials()
     const auth = await createAuth(store)
-    const { cookie } = exchange(auth)
+    const { cookie } = await exchange(auth)
     const [name, value] = cookie.split('=') as [string, string]
 
     expect(auth.isAuthenticated(request('/', '127.0.0.1:3080', { cookie: `${name}=broken` }))).toBe(false)
@@ -240,57 +369,106 @@ describe('BrowserAuth', () => {
     const invalidPayloads: unknown[] = [
       'not json',
       null,
-      { version: 2, authority: '127.0.0.1:3080', issuedAt: Date.now(), expiresAt: Date.now() + 1000 },
-      { version: 1, authority: 42, issuedAt: Date.now(), expiresAt: Date.now() + 1000 },
-      { version: 1, authority: '127.0.0.1:3080', issuedAt: 'now', expiresAt: Date.now() + 1000 },
-      { version: 1, authority: '127.0.0.1:3080', issuedAt: Date.now(), expiresAt: 'later' },
+      { version: 2, authority: '127.0.0.1:3080', device: 'unknown-session' },
+      { version: 2, authority: 42, device: 'AAAAAAAAAAAAAAAA' },
+      { version: 1, authority: '127.0.0.1:3080' },
     ]
     for (const payload of invalidPayloads) {
       expect(auth.isAuthenticated(request('/', '127.0.0.1:3080', {
         cookie: signedCookie(store, name, payload),
       }))).toBe(false)
     }
+  })
 
+  it('stops verifying a session once its absolute lifetime has passed', async () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date('2026-08-24T00:00:00.000Z'))
+    const store = new RecordCredentials()
+    const auth = await createAuth(store)
+    const { cookie } = await exchange(auth)
+
+    // A shorter reactivation cannot extend a session minted under a longer lifetime.
     const shorter = await createAuth(store, 1)
-    expect(shorter.isAuthenticated(request('/', '127.0.0.1:3080', { cookie }))).toBe(false)
+    expect(shorter.isAuthenticated(request('/', '127.0.0.1:3080', { cookie }))).toBe(true)
+
     vi.setSystemTime(new Date('2026-09-24T00:00:00.000Z'))
-    expect(auth.isAuthenticated(request('/', '127.0.0.1:3080', { cookie }))).toBe(false)
-    vi.setSystemTime(new Date('2026-08-23T00:00:00.000Z'))
     expect(auth.isAuthenticated(request('/', '127.0.0.1:3080', { cookie }))).toBe(false)
   })
 
-  it('loads one secret per activation and replaces it after deletion on the next activation', async () => {
+  it('loads one store per activation and replaces it after deletion on the next activation', async () => {
     const store = new RecordCredentials()
     const auth = await createAuth(store)
-    const first = exchange(auth)
-    expect(store).toMatchObject({ reads: 0, modifies: 1 })
+    const first = await exchange(auth)
+    expect(store).toMatchObject({ reads: 0, modifies: 2 })
+
+    // A store that refuses the write leaves the pairing unadopted.
+    store.discardWrites = true
+    await expect(exchange(auth)).rejects.toThrow(/record is missing/u)
+    store.discardWrites = false
+    expect(store).toMatchObject({ reads: 0, modifies: 3 })
 
     await store.deleteRecord()
     expect(auth.isAuthenticated(request('/', '127.0.0.1:3080', { cookie: first.cookie }))).toBe(true)
-    const sameActivation = exchange(auth)
-    expect(auth.isAuthenticated(request('/', '127.0.0.1:3080', { cookie: sameActivation.cookie }))).toBe(true)
-    expect(store).toMatchObject({ reads: 0, modifies: 1 })
+    await expect(exchange(auth)).rejects.toThrow(/record is missing/u)
+    expect(store).toMatchObject({ reads: 0, modifies: 4 })
 
     const reactivated = await createAuth(store)
-    const second = exchange(reactivated)
+    const second = await exchange(reactivated)
     expect(second.cookie).not.toBe(first.cookie)
     expect(reactivated.isAuthenticated(request('/', '127.0.0.1:3080', { cookie: first.cookie }))).toBe(false)
     expect(reactivated.isAuthenticated(request('/', '127.0.0.1:3080', { cookie: second.cookie }))).toBe(true)
-    expect(store).toMatchObject({ reads: 0, modifies: 2 })
+    expect(store).toMatchObject({ reads: 0, modifies: 6 })
   })
 
-  it('fails loud on an invalid owner record instead of replacing it', async () => {
+  it('fails loud on an unreadable owner record instead of replacing it', async () => {
     const unsupported = new RecordCredentials()
     unsupported.record = { kind: 'api-key', key: 'not-a-cookie-secret' }
     await expect(createAuth(unsupported)).rejects.toThrow(/unsupported format/u)
 
-    const malformed = new RecordCredentials()
-    malformed.record = { kind: 'grant', payload: { version: 1, secret: 'short' } }
-    await expect(createAuth(malformed)).rejects.toThrow(/invalid secret/u)
+    for (const secret of ['short', 42, null]) {
+      const malformed = new RecordCredentials()
+      malformed.record = { kind: 'grant', payload: { version: 1, secret } }
+      await expect(createAuth(malformed)).rejects.toThrow(/unsupported format/u)
+    }
 
-    const nonString = new RecordCredentials()
-    nonString.record = { kind: 'grant', payload: { version: 1, secret: 42 } }
-    await expect(createAuth(nonString)).rejects.toThrow(/invalid secret/u)
+    const badPairing = new RecordCredentials()
+    badPairing.record = { kind: 'grant', payload: { version: 2, secret: Buffer.alloc(32, 1).toString('base64url'), pairing: 'short', sessions: [] } }
+    await expect(createAuth(badPairing)).rejects.toThrow(/unsupported format/u)
+
+    const notAnArray = new RecordCredentials()
+    notAnArray.record = { kind: 'grant', payload: { version: 2, secret: Buffer.alloc(32, 1).toString('base64url'), pairing: Buffer.alloc(32, 2).toString('base64url'), sessions: {} } }
+    await expect(createAuth(notAnArray)).rejects.toThrow(/unsupported format/u)
+
+    const validSession = {
+      id: Buffer.alloc(9, 3).toString('base64url'),
+      userAgent: 'Phone/1.0',
+      pairedAt: 1,
+      lastSeenAt: 1,
+      expiresAt: 2,
+    }
+    const badRows: unknown[] = [
+      [null],
+      [{ ...validSession, id: 42 }],
+      [{ ...validSession, id: 'too-short' }],
+      [{ ...validSession, userAgent: 42 }],
+      [{ ...validSession, pairedAt: 'now' }],
+      [{ ...validSession, lastSeenAt: 1.5 }],
+      [{ ...validSession, expiresAt: 0 }],
+      [validSession, validSession],
+    ]
+    for (const sessions of badRows) {
+      const damaged = new RecordCredentials()
+      damaged.record = {
+        kind: 'grant',
+        payload: {
+          version: 2,
+          secret: Buffer.alloc(32, 1).toString('base64url'),
+          pairing: Buffer.alloc(32, 2).toString('base64url'),
+          sessions,
+        },
+      }
+      await expect(createAuth(damaged)).rejects.toThrow(/unsupported format/u)
+    }
 
     const discarded = new RecordCredentials()
     discarded.discardWrites = true
@@ -298,5 +476,15 @@ describe('BrowserAuth', () => {
 
     await expect(createAuth(new RecordCredentials(), Number.MAX_SAFE_INTEGER))
       .rejects.toThrow(/safe timestamp range/u)
+  })
+
+  it('records the browser User-Agent it paired, truncated for durable storage', async () => {
+    const auth = await createAuth(new RecordCredentials())
+    await exchange(auth, '127.0.0.1:3080', false, { userAgent: 'x'.repeat(400) })
+    expect((await auth.listSessions())[0]!.userAgent).toHaveLength(256)
+
+    const anonymous = await createAuth(new RecordCredentials())
+    await exchange(anonymous)
+    expect((await anonymous.listSessions())[0]!.userAgent).toBe('')
   })
 })

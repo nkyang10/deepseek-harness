@@ -36,9 +36,11 @@ kind: "package-reference"
 <a id="browser-authentication-and-request-trust"></a>
 ## 浏览器认证与请求信任
 
-每个 Host RPC 方法和 WebSocket 流都要求一个浏览器会话，不存在按方法区分的 loopback 层。每个进程生成一个随机启动令牌。`dsh-web-app` 打印并打开带 `?token=...` 的应用 URL，保留调用方的 authority 与挂载；`frontend-static` 把根路径和 index 请求交给 `ctx.connection.authorizeIndex`，后者只在 `GET /` 接受该令牌，写入绑定 authority 的签名 cookie，再重定向到干净的 `./`，移除令牌并保留请求目录。缺失、过期、畸形或 authority 不匹配的 cookie 会在 RPC 分发前得到 401。静态资源保持公开。HTTP 载体不在根路径交换之外接受 query token，也不接受 Authorization header token。
+每个 Host RPC 方法和 WebSocket 流都要求一个浏览器会话，不存在按方法区分的 loopback 层。获取会话的唯一方式是持久配对码。`dsh-web-app` 打印并打开带 `?token=...` 的应用 URL，保留调用方的 authority 与挂载；`frontend-static` 把根路径和 index 请求交给 `ctx.connection.authorizeIndex`，后者只在 `GET /` 接受该配对码，把该浏览器记录为已配对会话，写入绑定 authority 且指明该会话的签名 cookie，再重定向到干净的 `./`，移除配对码并保留请求目录。缺失、畸形、authority 不匹配、已撤销或已过期的 cookie 会在 RPC 分发前得到 401。静态资源保持公开。HTTP 载体不在根路径交换之外接受 query 配对码，也不接受 Authorization header 凭据。
 
-cookie 签名密钥是 `ctx.credentials` 中由 `client-connection/browser-session` 拥有的 grant 记录。本地提供方把它持久化到 `$DSH_HOME/.credentials.yaml`；`BrowserAuth` 在 Connection 激活期间加载或创建该记录，并把密钥留在内存中，因此请求认证同步执行。删除或替换该记录会在下一次 Connection 激活时生效。cookie 携带绝对签发与过期区间，`cookieMaxAgeDays` 默认设为 30 天，并在确定性名称与签名 payload 中同时绑定规范化 hostname 和 port。它是 host-only、`Path=/`、`HttpOnly`、`SameSite=Strict`；收到该 index 请求的监听器提供 TLS 时才带上 `Secure`，且只由该监听器自身的协议决定，`publicUrl` 声明与转发头都不参与判断。
+配对码、cookie 签名密钥和会话表同属 `ctx.credentials` 中由 `client-connection/browser-session` 拥有的 grant 记录。本地提供方把它们持久化到 `$DSH_HOME/.credentials.yaml`；`BrowserAuth` 在 Connection 激活期间加载或创建该记录，并把它们留在内存中，因此请求认证保持同步。配对码是持久的而非每进程生成，因此分享给另一台机器的链接在重启后仍可配对；`ctx.connection.rotatePairingCode()` 会替换它，让此前分享的链接不再配对新浏览器，而已配对的浏览器保持登录。每个交换配对码的浏览器都成为一个 `BrowserSession`，带有各自不透明的 `BrowserDeviceId`、它提供的 `User-Agent`，以及配对、最后活动与过期时间。`ctx.connection.listBrowserSessions()` 报告这些会话，丢弃已过期项并写回请求期间收集的最后活动时间；`ctx.connection.revokeBrowserSession(id)` 恰好终止其中一个会话，于是指明它的每个 cookie 立即停止通过验证，其他会话与配对码不受影响。配对时已持有该 authority 会话的浏览器会沿用其身份与配对时间，只刷新过期时间。会话功能出现之前写入的记录保留其签名密钥，但其 cookie 不指明任何会话，因此停止通过验证；配对码与空表会一并写入。
+
+cookie 的绝对有效期自配对时算起，`cookieMaxAgeDays` 默认设为 30 天，并在确定性名称与签名 payload 中同时绑定规范化 hostname 和 port。它是 host-only、`Path=/`、`HttpOnly`、`SameSite=Strict`；收到该 index 请求的监听器提供 TLS 时才带上 `Secure`，且只由该监听器自身的协议决定，`publicUrl` 声明与转发头都不参与判断。
 
 HTTPS cookie 名称与签名 audience 包含 `https:` scheme，因此即使 hostname 和 port 相同，HTTP cookie 也无法通过 TLS 监听器的认证。默认端口按监听器的 scheme 归一化。既有 HTTP cookie audience 保持不变。
 
@@ -75,7 +77,8 @@ API Gateway Client 把内部 `$events` 逻辑流注册为唯一 generation sourc
 
 - **缓冲型 `/api` 路由会把每个请求体保留在内存里**：`maxRequestBodyBytes`（默认 300 MiB，按默认 200 MiB 图片总量上限经 base64 膨胀加信封余量得出）限制普通图片与 RPC 信封。显式启用的流式路由接收带背压的分块并绕过总量上限；路由实现负责持久化、取消与存储配额。
 - **明文 HTTP 监听器会在传输中暴露 bearer cookie**：此类部署无法给浏览器 cookie 加 `Secure`；若把同一 authority 暴露到网络上，会话 cookie 可能泄露；在 Web 载体（[`dsh-host-webserver`](../../host/webserver/README.zh.md)）上配置 TLS 即可让 cookie 带上 `Secure` 并只经 TLS 发送。
-- **没有 logout 操作**：清除浏览器 cookie 会结束单个浏览器会话；删除 owner 凭据记录并重启 `dsh` 会撤销全部会话。
+- **没有 logout 操作**：浏览器清除自己的 cookie 即结束自身会话；`ctx.connection.revokeBrowserSession(id)` 会为所有持有该 cookie 的人终止单个会话；删除 owner 凭据记录并重启 `dsh` 会撤销全部会话。
+- **已配对的浏览器仅凭 `User-Agent` 区分**：会话记录的是配对时浏览器提供的内容，因此两个具有相同该字符串的浏览器在列表中无法分辨，也无法分别撤销。
 
 
 <a id="dev-note"></a>

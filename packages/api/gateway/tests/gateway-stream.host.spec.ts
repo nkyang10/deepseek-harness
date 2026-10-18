@@ -752,7 +752,7 @@ describe('Typert Remote streams', () => {
   it('echoes uplink frames over the WebSocket carrier and fails misused uplinks per stream', async () => {
     const { ctx, service } = await setup(true)
     const socket = new WebSocket(`ws://127.0.0.1:${String(ctx.webServer.port)}/api/remote.mux`, {
-      headers: { cookie: browserCookie(ctx) },
+      headers: { cookie: await browserCookie(ctx) },
     })
     await once(socket, 'open')
     const frames: Record<string, unknown>[] = []
@@ -805,7 +805,7 @@ describe('Typert Remote streams', () => {
   it('fails a stream whose buffered uplink exceeds the configured inbox bytes', async () => {
     const { ctx } = await setup(true, { streamInboxBytes: 64 })
     const socket = new WebSocket(`ws://127.0.0.1:${String(ctx.webServer.port)}/api/remote.mux`, {
-      headers: { cookie: browserCookie(ctx) },
+      headers: { cookie: await browserCookie(ctx) },
     })
     await once(socket, 'open')
     const frames: Record<string, unknown>[] = []
@@ -884,7 +884,7 @@ describe('Typert Remote streams', () => {
   it('uses the configured WebSocket heartbeat interval', { timeout: 1_000 }, async () => {
     const { ctx } = await setup(true, { websocketHeartbeatIntervalMs: 20 })
     const socket = new WebSocket(`ws://127.0.0.1:${String(ctx.webServer.port)}/api/remote.mux`, {
-      headers: { cookie: browserCookie(ctx) },
+      headers: { cookie: await browserCookie(ctx) },
     })
     const ping = once(socket, 'ping')
     await once(socket, 'open')
@@ -897,7 +897,7 @@ describe('Typert Remote streams', () => {
   it('multiplexes independent streams over one WebSocket and propagates cancellation', async () => {
     const { ctx, service } = await setup(true)
     const socket = new WebSocket(`ws://127.0.0.1:${String(ctx.webServer.port)}/api/remote.mux`, {
-      headers: { cookie: browserCookie(ctx) },
+      headers: { cookie: await browserCookie(ctx) },
     })
     await once(socket, 'open')
     const frames: Record<string, unknown>[] = []
@@ -976,7 +976,7 @@ describe('Typert Remote streams', () => {
     await events[Symbol.asyncIterator]().return?.()
 
     const socket = new WebSocket(`ws://127.0.0.1:${String(ctx.webServer.port)}/api/remote.mux`, {
-      headers: { cookie: browserCookie(ctx) },
+      headers: { cookie: await browserCookie(ctx) },
     })
     await once(socket, 'open')
     const frames: Record<string, unknown>[] = []
@@ -1019,7 +1019,7 @@ describe('Typert Remote streams', () => {
       .toThrow('forwarded Remote event source is already registered')
 
     const socket = new WebSocket(`ws://127.0.0.1:${String(ctx.webServer.port)}/api/remote.mux`, {
-      headers: { cookie: browserCookie(ctx) },
+      headers: { cookie: await browserCookie(ctx) },
     })
     await once(socket, 'open')
     const frames: Record<string, unknown>[] = []
@@ -1472,7 +1472,7 @@ describe('Typert Remote streams', () => {
   it('validates the internal Remote event request and reports an absent source', async () => {
     const { ctx } = await setup(true)
     const socket = new WebSocket(`ws://127.0.0.1:${String(ctx.webServer.port)}/api/remote.mux`, {
-      headers: { cookie: browserCookie(ctx) },
+      headers: { cookie: await browserCookie(ctx) },
     })
     await once(socket, 'open')
     const frames: Record<string, unknown>[] = []
@@ -1578,7 +1578,7 @@ async function setup(
 
 async function acceptsSocket(ctx: Context): Promise<boolean> {
   const socket = new WebSocket(`ws://127.0.0.1:${String(ctx.webServer.port)}/api/remote.mux`, {
-    headers: { cookie: browserCookie(ctx) },
+    headers: { cookie: await browserCookie(ctx) },
   })
   const closed = new Promise<void>((resolve) => { socket.once('close', () => { resolve() }) })
   const opened = await once(socket, 'open').then(() => true, () => false)
@@ -1660,7 +1660,7 @@ interface RemoteEventTestClient {
 
 async function openEventClient(ctx: Context, streamId: string): Promise<RemoteEventTestClient> {
   const origin = `http://127.0.0.1:${String(ctx.webServer.port)}`
-  const cookie = browserCookie(ctx)
+  const cookie = await browserCookie(ctx)
   const socket = new WebSocket(`${origin.replace('http:', 'ws:')}/api/remote.mux`, {
     headers: { cookie },
   })

@@ -13,6 +13,7 @@ import { bridge } from './http-bridge.ts'
 import { isRemoteAuthority, isTrustedApiRequest } from './api-request-trust.ts'
 import { API_PATH } from './api-path.ts'
 import type { BrowserAuth } from './browser-auth.ts'
+import type { BrowserDeviceId, BrowserSession } from './rpc.ts'
 import { OperatorPeer } from './operator-peer.ts'
 import type {
   PeerAdmission,
@@ -72,7 +73,7 @@ export class HostConnectionService extends Service implements HostConnectionHand
    * Provide the Host half over the active HTTP server.
    * @param ctx - owning Connection plugin context.
    * @param trustedHosts - deployment authorities accepted by the Host/Origin fence.
-   * @param browserAuth - process token and persistent browser-session owner.
+   * @param browserAuth - pairing code, session table, and cookie-signing secret owner.
    */
   constructor(
     ctx: Context,
@@ -118,14 +119,31 @@ export class HostConnectionService extends Service implements HostConnectionHand
 
   /**
    * Authenticate an index request; native TLS listeners mint Secure cookies.
+   * A successful pairing writes the new session to the credential store before
+   * the redirect that carries its cookie.
    */
-  authorizeIndex(request: ConnectionIndexRequest, response: ConnectionIndexResponse): boolean {
+  async authorizeIndex(request: ConnectionIndexRequest, response: ConnectionIndexResponse): Promise<boolean> {
     return this.browserAuth.authorizeIndex(request, response, this.ctx.get('webServer')?.protocol === 'https:')
   }
 
-  /** Add this process's launch token to the clean application URL. */
+  /** Add this deployment's pairing code to the clean application URL. */
   authenticatedUrl(baseUrl: string): string {
     return this.browserAuth.authenticatedUrl(baseUrl)
+  }
+
+  /** The browsers currently paired with this deployment. */
+  listBrowserSessions(): Promise<readonly BrowserSession[]> {
+    return this.browserAuth.listSessions()
+  }
+
+  /** End one paired browser's access without disturbing the others. */
+  revokeBrowserSession(id: BrowserDeviceId): Promise<void> {
+    return this.browserAuth.revokeSession(id)
+  }
+
+  /** Replace the pairing code, keeping already paired browsers signed in. */
+  rotatePairingCode(): Promise<void> {
+    return this.browserAuth.rotatePairingCode()
   }
 
   /**

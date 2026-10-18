@@ -40,6 +40,15 @@ process.on('message', message => {
     process.send({ type: 'quit-inspection', requestId: message.requestId, activeTasks: false, scheduledTasks: message.requestId % 2 === 1 })
     return
   }
+  if (message.type === 'browser-sessions') {
+    const sessions = [{ id: 'phone', userAgent: 'Phone/1.0', pairedAt: 1, lastSeenAt: 2, expiresAt: 3 }]
+    // One device id never answers, standing in for a Host that stops responding.
+    if (message.action === 'revoke' && message.deviceId === 'silent') return
+    process.send({ type: 'browser-sessions', requestId: message.requestId, sessions,
+      ...message.action === 'revoke' && message.deviceId === 'phone' ? { sessions: [] }
+        : message.action === 'rotate' ? { url: 'http://127.0.0.1:3080/?token=rotated' } : {} })
+    return
+  }
   if (message.type !== 'shutdown') return
   server.close(() => {
     writeFileSync(join(process.argv[3], 'stopped'), '')
@@ -95,6 +104,43 @@ describe('desktop host process', () => {
     expect(Date.now() - started).toBeGreaterThanOrEqual(QUIT_INSPECTION_DEADLINE_MS - 50)
     expect(await host.inspectQuit()).toEqual({ activeTasks: false, scheduledTasks: false })
   }, 15_000)
+
+  it('correlates paired-browser listings, revocations, and code rotation over private IPC', async () => {
+    const host = hostProcess(projectWithHost())
+    await expect(host.browserSessions('list')).rejects.toThrow('desktop pairing: Host is unavailable')
+    await host.start()
+    expect(await host.browserSessions('list')).toEqual({
+      sessions: [{ id: 'phone', userAgent: 'Phone/1.0', pairedAt: 1, lastSeenAt: 2, expiresAt: 3 }],
+    })
+    expect(await host.browserSessions('revoke', 'phone')).toEqual({ sessions: [] })
+    expect(await host.browserSessions('revoke', 'laptop')).toEqual({
+      sessions: [{ id: 'phone', userAgent: 'Phone/1.0', pairedAt: 1, lastSeenAt: 2, expiresAt: 3 }],
+    })
+    expect(await host.browserSessions('rotate')).toEqual({
+      sessions: [{ id: 'phone', userAgent: 'Phone/1.0', pairedAt: 1, lastSeenAt: 2, expiresAt: 3 }],
+      url: 'http://127.0.0.1:3080/?token=rotated',
+    })
+    // An unanswered revocation fails at this control kind's own deadline.
+    const started = Date.now()
+    await expect(host.browserSessions('revoke', 'silent')).rejects.toThrow('desktop pairing: session inspection timed out')
+    expect(Date.now() - started).toBeGreaterThanOrEqual(9_000)
+    await host.stop(true)
+  }, 30_000)
+
+  it('refuses an invalid paired-browser answer and fails the Host rather than trusting it', async () => {
+    const onFailure = vi.fn()
+    const host = hostProcess(projectWithHost(`
+      process.send({ type: 'ready', url: 'http://127.0.0.1:3080/' })
+      process.on('message', message => {
+        if (message.type === 'browser-sessions') {
+          process.send({ type: 'browser-sessions', requestId: message.requestId, sessions: [{ id: 42 }] })
+        }
+      })
+    `), undefined, onFailure)
+    await host.start()
+    await expect(host.browserSessions('list')).rejects.toThrow('invalid IPC event')
+    expect(onFailure).toHaveBeenCalled()
+  })
 
   it.each([
     'process.exit(17)',

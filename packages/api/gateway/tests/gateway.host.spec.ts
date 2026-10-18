@@ -181,11 +181,11 @@ async function serveRoute(route: WebRoute): Promise<{ readonly origin: string; c
   }
 }
 
-/** Exchange a Connection launch token without mounting the frontend fallback. */
-function browserCookie(connection: HostConnectionHandle, origin: string): string {
+/** Exchange a Connection pairing code without mounting the frontend fallback. */
+async function browserCookie(connection: HostConnectionHandle, origin: string): Promise<string> {
   const target = new URL(connection.authenticatedUrl(origin))
   let setCookie: string | undefined
-  connection.authorizeIndex({
+  await connection.authorizeIndex({
     method: 'GET',
     url: `${target.pathname}${target.search}`,
     headers: { host: target.host },
@@ -1328,7 +1328,7 @@ describe('TypertGatewayService', () => {
     let strictActive = true
     expect(routes).toHaveLength(1)
     const server = await serveRoute(routes[0]!)
-    const cookie = browserCookie(ctx.connection, server.origin)
+    const cookie = await browserCookie(ctx.connection, server.origin)
 
     try {
       const response = await fetch(`${server.origin}/api/goals/create`, {

@@ -782,16 +782,32 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         returns: 'the operator Peer, or the rejection status.',
       },
       {
-        signature: 'authorizeIndex(request: ConnectionIndexRequest, response: ConnectionIndexResponse): boolean',
-        description: 'Authenticate one frontend index request, owning a token redirect or 401. The cookie this mints is `Secure` when the mounted Web carrier serves TLS, which only that listener\'s protocol decides.',
+        signature: 'authorizeIndex(request: ConnectionIndexRequest, response: ConnectionIndexResponse): Promise<boolean>',
+        description: 'Authenticate one frontend index request, owning a pairing redirect or 401. The cookie this mints is `Secure` when the mounted Web carrier serves TLS, which only that listener\'s protocol decides.',
         parameters: [{ name: 'request', description: 'root or configured-index HTTP request.' }, { name: 'response', description: 'response owned when the result is false.' }],
         returns: 'true only when the frontend may serve index.html.',
       },
       {
         signature: 'authenticatedUrl(baseUrl: string): string',
-        description: 'Add the fresh process token to an ordinary Web application URL.',
+        description: 'Add the deployment\'s durable pairing code to an ordinary Web application URL. Whoever opens the result pairs a new browser session.',
         parameters: [{ name: 'baseUrl', description: 'clean application URL whose authority and mount are preserved.' }],
-        returns: 'tokenized URL for initial login; a mount proxy strips its prefix before {@link authorizeIndex}.',
+        returns: 'pairing URL for a new browser; a mount proxy strips its prefix before {@link authorizeIndex}.',
+      },
+      {
+        signature: 'listBrowserSessions(): Promise<readonly BrowserSession[]>',
+        description: 'List the browsers currently paired with this deployment, newest pairing last, after writing back the last-seen times collected while answering requests and dropping sessions whose lifetime has passed.',
+        parameters: [],
+        returns: 'the live sessions.',
+      },
+      {
+        signature: 'revokeBrowserSession(id: BrowserDeviceId): Promise<void>',
+        description: 'End one paired browser\'s access. Every cookie naming that session stops verifying at once; other sessions and the pairing code are untouched.',
+        parameters: [{ name: 'id', description: 'the session to revoke.' }],
+      },
+      {
+        signature: 'rotatePairingCode(): Promise<void>',
+        description: 'Replace the pairing code, so previously shared links no longer pair new browsers while already paired browsers keep their sessions.',
+        parameters: [],
       },
     ],
   },
@@ -4848,6 +4864,14 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'BrandedNumber',
     declaration: 'export type BrandedNumber<B extends string> = number & {\n    readonly [BRAND]: B;\n};',
+  },
+  {
+    name: 'BrowserDeviceId',
+    declaration: 'export type BrowserDeviceId = Branded<\'browser-device-id\'>;',
+  },
+  {
+    name: 'BrowserSession',
+    declaration: 'export interface BrowserSession {\n    readonly id: BrowserDeviceId;\n    readonly userAgent: string;\n    readonly pairedAt: number;\n    readonly lastSeenAt: number;\n    readonly expiresAt: number;\n}',
   },
   {
     name: 'BrowserUseProviderName',
