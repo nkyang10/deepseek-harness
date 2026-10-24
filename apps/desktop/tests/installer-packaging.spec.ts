@@ -37,6 +37,8 @@ describe('installer preparation preserves application dependencies', () => {
     try {
       const { createElectronBuilderConfig } = await import('../electron-builder.config.mjs')
       const config = createElectronBuilderConfig(env, platform, 'x64')
+      // Runtime portable mode needs no marker; packaging must not add one.
+      expect(Object.hasOwn(config, 'extraFiles')).toBe(false)
       const aboutIcon = config.extraResources.find(resource => resource.to === 'icon.png')
       expect(aboutIcon).toBeDefined()
       expect(readFileSync(aboutIcon!.from)).toEqual(readFileSync(new URL('../resources/icon-windows.png', import.meta.url)))
@@ -62,6 +64,33 @@ describe('installer preparation preserves application dependencies', () => {
       vi.unstubAllEnvs()
       vi.restoreAllMocks()
     }
+  })
+
+  it('keeps packaged Windows portable without a marker and rejects portable packaging outside unsigned Windows', async () => {
+    const { createElectronBuilderConfig } = await import('../scripts/electron-builder-config.mjs')
+    const portable = createElectronBuilderConfig({
+      DSH_DESKTOP_APP_ID: 'com.deepseek.harness',
+      DSH_DESKTOP_TARGET_PLATFORM: 'win32',
+      DSH_DESKTOP_TARGET_ARCH: 'x64',
+      DSH_DESKTOP_UNSIGNED: '1',
+      DSH_DESKTOP_PORTABLE: '1',
+    }, 'win32', 'x64')
+    expect(Object.hasOwn(portable, 'extraFiles')).toBe(false)
+    expect(portable.extraMetadata).not.toHaveProperty('dshMandatoryUpdatePolicy')
+    expect(() => createElectronBuilderConfig({
+      DSH_DESKTOP_APP_ID: 'com.deepseek.harness',
+      DSH_DESKTOP_TARGET_PLATFORM: 'win32',
+      DSH_DESKTOP_TARGET_ARCH: 'x64',
+      DSH_DESKTOP_UNSIGNED: '1',
+      DSH_DESKTOP_PORTABLE: '2',
+    }, 'win32', 'x64')).toThrow(/DSH_DESKTOP_PORTABLE must be 0 or 1/u)
+    expect(() => createElectronBuilderConfig({
+      DSH_DESKTOP_APP_ID: 'com.deepseek.harness',
+      DSH_DESKTOP_TARGET_PLATFORM: 'win32',
+      DSH_DESKTOP_TARGET_ARCH: 'x64',
+      DSH_DESKTOP_UNSIGNED: '0',
+      DSH_DESKTOP_PORTABLE: '1',
+    }, 'win32', 'x64')).toThrow(/DSH_DESKTOP_PORTABLE requires an unsigned Windows build/u)
   })
 
   it('names unsigned Windows artifacts so they cannot pass for release builds', async () => {

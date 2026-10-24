@@ -13,6 +13,7 @@ Desktop runs the Harness workspace in a native application. This reference cover
 ## Table of Contents
 
 - [Application overview](#application-overview)
+- [Portable mode](#portable-mode)
 - [Terminal command](#terminal-command)
 - [Closing the window and quitting](#closing-the-window-and-quitting)
 - [Key technical decisions](#key-technical-decisions)
@@ -51,6 +52,16 @@ A server-expired account credential returns to Welcome when no official API key 
 Desktop microphone access is restricted to audio requests from the primary `dsh-app://app` frame. macOS uses system microphone authorization, a packaged usage description, and `com.apple.security.device.audio-input` in the main application and Helper signatures.
 
 Press F12 (Fn+F12 on media-key keyboards), Command+Option+I on macOS, or Ctrl+Shift+I on Windows to toggle DevTools for the focused application page, including in packaged builds. These native shortcuts use hidden application-menu items. Update overlays and packaged embedded browser guests disable DevTools.
+
+<a id="portable-mode"></a>
+
+## Portable mode
+
+Every packaged Windows copy stores its data under `data` beside the executable: the Harness home becomes `data/dsh-home` (published as `DSH_HOME` before the Host starts), Electron user data becomes `data/electron-data`, and crash logs become `data/logs`. Nothing is read from or written to `~/.dsh` or `%APPDATA%`, so a portable copy can be unpacked beside an official installation, used, and deleted without changing it.
+
+A portable copy never claims a machine-wide surface: it does not register the `dsh://` protocol handler, does not offer **Manage dsh Command** (the `dsh` PATH entry), and does not check for or install updates; **Check for Updates** reports that a new release folder is the update path. The `dsh` command, its PATH entry, the protocol handler, and the updater stay with the installed dsh. Development and non-Windows launches keep the shared roots and installed behavior.
+
+A packaged Windows launch creates `data` before Host startup and fails loud when the executable location cannot host it. It never imports an existing `~/.dsh`, so sessions, credentials, and provider settings start empty; copy the files a user wants to keep into `data/dsh-home` before the first launch or through the Settings pages.
 
 <a id="terminal-command"></a>
 

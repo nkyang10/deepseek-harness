@@ -2,7 +2,7 @@ import { mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
-import { loadDesktopPackageEnvironment, localMacOSPackageEnvironment, validateDesktopPackageEnvironment } from '../scripts/desktop-package-environment.mjs'
+import { loadDesktopPackageEnvironment, localMacOSPackageEnvironment, localWindowsPackageEnvironment, validateDesktopPackageEnvironment } from '../scripts/desktop-package-environment.mjs'
 import { resolveWindowsPackageSettings } from '../scripts/windows-package-settings.mjs'
 
 const WINDOWS = { platform: 'win32', arch: 'x64' } as const
@@ -40,6 +40,35 @@ describe('Desktop local packaging configuration', () => {
     expect(() => { validateDesktopPackageEnvironment(local, MACOS, { unsigned: true }) }).not.toThrow()
     expect(parent.DSH_DESKTOP_UNSIGNED).toBe('0')
     expect(parent.DSH_DESKTOP_APP_ID).toBe('com.example.release')
+  })
+
+  it('selects Windows portable defaults while excluding inherited release settings and retaining build networking', () => {
+    const parent = {
+      PATH: 'build-tools', HTTPS_PROXY: 'http://proxy.example:8080', DSH_DESKTOP_NPM_REGISTRY: 'https://registry.npmmirror.com',
+      DSH_DESKTOP_APP_ID: 'com.example.release', DSH_DESKTOP_UNSIGNED: '0', DSH_DESKTOP_PORTABLE: '0',
+      DSH_DESKTOP_AUTO_UPDATE_ENV: 'production', DSH_DESKTOP_MANDATORY_UPDATE_CONFIG: 'invalid-json',
+      DSH_DESKTOP_MANDATORY_UPDATE_PROD_ORIGIN: 'https://policy.example.com',
+      DSH_DESKTOP_WINDOWS_CER_FILE: 'missing.cer', DOWNLOAD_TEST_ORIGIN: 'https://updates.example.com',
+    }
+    const local = localWindowsPackageEnvironment(parent)
+    expect(local).toEqual({
+      PATH: parent.PATH, HTTPS_PROXY: parent.HTTPS_PROXY, DSH_DESKTOP_NPM_REGISTRY: parent.DSH_DESKTOP_NPM_REGISTRY,
+      DSH_DESKTOP_APP_ID: 'com.deepseek.harness', DSH_DESKTOP_PORTABLE: '1', DSH_DESKTOP_UNSIGNED: '1',
+    })
+    expect(() => { validateDesktopPackageEnvironment(local, WINDOWS, { unsigned: true, directory: true }) }).not.toThrow()
+    expect(parent.DSH_DESKTOP_UNSIGNED).toBe('0')
+    expect(parent.DSH_DESKTOP_PORTABLE).toBe('0')
+    expect(parent.DSH_DESKTOP_APP_ID).toBe('com.example.release')
+  })
+
+  it('rejects portable mode outside an unsigned Windows directory build and rejects invalid portable values', () => {
+    const local = localWindowsPackageEnvironment({})
+    expect(() => { validateDesktopPackageEnvironment({ ...local, DSH_DESKTOP_PORTABLE: '2' }, WINDOWS, { unsigned: true, directory: true }) })
+      .toThrow(/DSH_DESKTOP_PORTABLE must be 0 or 1/u)
+    expect(() => { validateDesktopPackageEnvironment(local, WINDOWS, { unsigned: true }) })
+      .toThrow(/DSH_DESKTOP_PORTABLE requires an unsigned Windows directory build/u)
+    expect(() => { validateDesktopPackageEnvironment(local, MACOS, { unsigned: true, directory: true }) })
+      .toThrow(/DSH_DESKTOP_PORTABLE requires an unsigned Windows directory build/u)
   })
 
   it('takes cache concurrency from the Windows file and defaults to four without ambient overrides', async () => {

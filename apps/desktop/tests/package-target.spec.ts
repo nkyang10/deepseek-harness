@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import {
   desktopElectronBuilderArguments,
   desktopElectronBuilderEnvironment,
+  isPortableWindowsInvocation,
   parseDesktopPackageInvocation,
   resolveDesktopPackageTarget,
   withoutDesktopUploadCredentials,
@@ -71,6 +72,13 @@ describe('desktop package target', () => {
       'never',
     ])
     expect(desktopElectronBuilderArguments(target, true)).toContain('--dir')
+  })
+
+  it('identifies the Windows portable directory command without treating installer or macOS builds as portable', () => {
+    expect(isPortableWindowsInvocation(parseDesktopPackageInvocation(['win-x64', '--unsigned', '--dir'], 'win32', 'x64'))).toBe(true)
+    expect(isPortableWindowsInvocation(parseDesktopPackageInvocation(['win-x64', '--unsigned'], 'win32', 'x64'))).toBe(false)
+    expect(isPortableWindowsInvocation(parseDesktopPackageInvocation(['win-x64', '--dir'], 'win32', 'x64'))).toBe(false)
+    expect(isPortableWindowsInvocation(parseDesktopPackageInvocation(['mac-arm64', '--unsigned', '--dir'], 'darwin', 'arm64'))).toBe(false)
   })
 
   it('accepts unsigned supported targets and rejects preparation-only use', () => {

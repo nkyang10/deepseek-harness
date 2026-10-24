@@ -10,7 +10,7 @@ import {
 } from './desktop-auto-update-environment.mjs'
 import { desktopArtifactOutput, desktopTargetBuildPaths } from './desktop-build-paths.mjs'
 import { packageMacOSArtifacts, type DesktopPrepackagedArtifact } from './package-macos.ts'
-import { loadDesktopPackageEnvironment, localMacOSPackageEnvironment, validateDesktopPackageEnvironment } from './desktop-package-environment.mjs'
+import { loadDesktopPackageEnvironment, localMacOSPackageEnvironment, localWindowsPackageEnvironment, validateDesktopPackageEnvironment } from './desktop-package-environment.mjs'
 import { createPackagingRun, recordPackagingEvent } from './packaging-run.mjs'
 import { withWindowsSigningStage } from './windows-signing-stage.mjs'
 import { prepareWindowsSignatureCacheDirectory, resolveWindowsSignatureCacheDirectory } from './windows-signature-cache-directory.mjs'
@@ -203,6 +203,15 @@ interface DesktopPackageInvocation {
   readonly requestedBuildVersion: string | undefined
 }
 
+/**
+ * Whether this invocation produces the folder-based portable Windows distribution.
+ * @param invocation - Validated packaging request.
+ * @returns True when the command uses local portable defaults and electron-builder `--dir`.
+ */
+export function isPortableWindowsInvocation(invocation: DesktopPackageInvocation): boolean {
+  return invocation.target.platform === 'win32' && invocation.unsigned && invocation.directory
+}
+
 function hostTargetName(platform: NodeJS.Platform, arch: string): DesktopPackageTargetName {
   const name = `${platform === 'darwin' ? 'mac' : platform === 'win32' ? 'win' : platform}-${arch}`
   if (!isTargetName(name)) throw new Error(`desktop package: unsupported build host ${platform}-${arch}`)
@@ -343,11 +352,14 @@ async function main(): Promise<void> {
   if (invocation.skipNotarization) {
     process.stdout.write('desktop package: skipping notarization and stapling; internal debugging only, not qualified for distribution or update publishing\n')
   }
-  const environment = target.platform === 'darwin' && invocation.unsigned
-    ? localMacOSPackageEnvironment()
-    : loadDesktopPackageEnvironment(target.platform, process.env, APP_ROOT, {
-      unsigned: invocation.unsigned, prepareOnly: invocation.prepareOnly,
-    })
+  const portableWindows = isPortableWindowsInvocation(invocation)
+  const environment = portableWindows
+    ? localWindowsPackageEnvironment()
+    : target.platform === 'darwin' && invocation.unsigned
+      ? localMacOSPackageEnvironment()
+      : loadDesktopPackageEnvironment(target.platform, process.env, APP_ROOT, {
+        unsigned: invocation.unsigned, prepareOnly: invocation.prepareOnly,
+      })
   const productVersion = packageVersion(join(APP_ROOT, 'package.json'), 'desktop package')
   // Release settings come from the selected configuration files, so the version this run publishes is an
   // argument; the environment variable below only carries it to the child processes that build.
@@ -436,6 +448,7 @@ export async function packageTarget(
   const targetEnv: NodeJS.ProcessEnv = {
     ...buildEnv,
     DSH_DESKTOP_MACOS_SKIP_NOTARIZATION: invocation.skipNotarization ? '1' : '0',
+    DSH_DESKTOP_PORTABLE: isPortableWindowsInvocation(invocation) ? '1' : '0',
     DSH_DESKTOP_TARGET_PLATFORM: target.platform,
     DSH_DESKTOP_TARGET_ARCH: target.arch,
   }

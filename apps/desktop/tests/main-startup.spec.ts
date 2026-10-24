@@ -12,6 +12,8 @@ import { DesktopHostFatalError, DesktopHostUncleanExitError } from '../src/host-
 import { en, zh } from '../src/locale.ts'
 import { DesktopUpdatePreparationError } from '../src/update-error.ts'
 import { writeCrashReport } from '../src/crash-report.ts'
+import type { PortablePaths } from '../src/portable.ts'
+import { PORTABLE_DATA_DIR, resolvePortablePaths } from '../src/portable.ts'
 
 type InvokeEvent = { sender?: unknown; senderFrame: { url: string } }
 type InvokeHandler = (event: InvokeEvent, ...args: unknown[]) => unknown
@@ -164,6 +166,7 @@ const harness = await vi.hoisted(async () => {
     getAppPath: (): string => 'desktop-test-app',
     setAppLogsPath: vi.fn(),
     getPath: vi.fn<(name: string) => string>(),
+    setPath: vi.fn<(name: string, path: string) => void>(),
     setAboutPanelOptions: vi.fn<(options: Electron.AboutPanelOptionsOptions) => void>(),
     requestSingleInstanceLock: () => true,
     setAsDefaultProtocolClient: vi.fn(),
@@ -269,6 +272,24 @@ const harness = await vi.hoisted(async () => {
     },
   }
 })
+
+// Main-startup tests keep the machine-wide default unless a case explicitly installs portable roots.
+const portableHarness = vi.hoisted(() => {
+  let paths: PortablePaths | undefined
+  return {
+    get paths() { return paths },
+    set paths(value: PortablePaths | undefined) { paths = value },
+    apply: vi.fn(() => {
+      if (paths === undefined) return undefined
+      process.env.DSH_HOME = paths.dshHome
+      return paths
+    }),
+  }
+})
+vi.mock('../src/portable.ts', async importOriginal => ({
+  ...await importOriginal<typeof import('../src/portable.ts')>(),
+  applyPortablePaths: portableHarness.apply,
+}))
 
 const testAuth = vi.hoisted(() => ({ login: vi.fn<() => Promise<'returned' | 'cancelled' | 'failed'>>(),
   focus: vi.fn(), dispose: vi.fn(async () => {}) }))
@@ -410,6 +431,7 @@ beforeEach(() => {
   testAuth.login.mockResolvedValue('cancelled')
   vi.useFakeTimers()
   harness.reset()
+  portableHarness.paths = undefined
   const userData = mkdtempSync(join(tmpdir(), 'dsh-main-user-data-'))
   onTestFinished(() => { rmSync(userData, { recursive: true, force: true }) })
   harness.app.getPath.mockImplementation(name => name === 'userData' ? userData : `desktop-test-${name}`)
@@ -425,6 +447,7 @@ beforeEach(() => {
   vi.stubEnv('DSH_DESKTOP_DSH_DIR', 'test-runtime')
   vi.stubEnv('DSH_DESKTOP_PRIMARY_RUNTIME_DIR', 'test-primary-runtime')
   vi.stubGlobal('process', { ...process, platform: 'win32', arch: 'x64', resourcesPath: 'desktop-test-resources' })
+  vi.stubEnv('DSH_HOME', undefined)
   vi.stubEnv('DSH_DESKTOP_HOST_INSPECT_PORT', undefined)
   vi.stubEnv('DSH_DESKTOP_DEV_PROJECT_DIR', undefined)
   vi.stubEnv('DSH_DESKTOP_MANDATORY_UPDATE_CONFIG', undefined)
@@ -1061,6 +1084,35 @@ describe('desktop main startup', () => {
       ? ['about', 'separator', en.checkUpdatesMenu, en.copyWebLinkMenu, en.pairedDevicesMenu, en.cliCommandMenu, 'separator', 'hide', 'hideOthers', 'unhide', 'separator', 'quit']
       : ['about', 'separator', en.checkUpdatesMenu, en.copyWebLinkMenu, en.pairedDevicesMenu, 'separator', 'quit'])
     expect(harness.menu.setApplicationMenu).toHaveBeenCalledOnce()
+  })
+
+  it.each(['win32', 'darwin'] as const)('leaves machine-wide surfaces to an installed dsh when portable (%s)', async (platform) => {
+    vi.spyOn(process, 'platform', 'get').mockReturnValue(platform)
+    const exeDirectory = mkdtempSync(join(tmpdir(), 'dsh-main-portable-'))
+    onTestFinished(() => { rmSync(exeDirectory, { recursive: true, force: true }) })
+    const paths = resolvePortablePaths(join(exeDirectory, 'DeepSeek Harness.exe'))
+    portableHarness.paths = paths
+    await import('../src/main.ts')
+    await harness.preparing.promise
+    expect(portableHarness.apply).toHaveBeenCalledOnce()
+    expect(harness.app.setAsDefaultProtocolClient).not.toHaveBeenCalled()
+    const labels = applicationMenuItems().map(item => item.label ?? item.role)
+    expect(labels).not.toContain(en.checkUpdatesMenu)
+    expect(labels).not.toContain(en.cliCommandMenu)
+    expect(process.env.DSH_HOME).toBe(join(exeDirectory, PORTABLE_DATA_DIR, 'dsh-home'))
+    expect(harness.updateCheck).not.toHaveBeenCalled()
+  })
+
+  it('reports update unavailability when the product Updates surface opens a portable copy', async () => {
+    portableHarness.paths = resolvePortablePaths('C:\\portable\\DeepSeek Harness.exe')
+    await readyWorkspace()
+    expect(harness.updateCheck).not.toHaveBeenCalled()
+    harness.dialog.showMessageBox.mockResolvedValueOnce({ response: 0, checkboxChecked: false })
+    await invoke(DESKTOP_IPC.updatesOpen, 'app')
+    expect(harness.dialog.showMessageBox).toHaveBeenCalledWith(expect.objectContaining({
+      title: en.updateCheckTitle, message: en.updatePortableUnavailable,
+    }))
+    expect(harness.updateCheck).not.toHaveBeenCalled()
   })
 
   it.each(['en-US', 'zh-CN'])('localizes macOS application commands without changing the application name (%s)', async (locale) => {

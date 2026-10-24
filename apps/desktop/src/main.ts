@@ -61,6 +61,7 @@ import { DesktopUpdateOverlays } from './update-overlay.ts'
 import { DesktopQuitConfirmation } from './quit-confirmation.ts'
 import { DesktopTray } from './tray.ts'
 import { DesktopBackgroundNotice } from './background-notice.ts'
+import { applyPortablePaths } from './portable.ts'
 
 let focusPrimaryWindow = (): void => {}
 let stopForRecovery = async (): Promise<void> => {}
@@ -80,9 +81,15 @@ let backendReady = false
 /** Error-level console output of the primary window, attached to crash reports. */
 const rendererConsole = new RendererConsoleTail()
 
+// Packaged Windows data lives beside the executable before logs, settings, the Host, or
+// its children resolve a root. Failing here is fatal: a portable copy without a writable
+// data directory cannot keep its promise not to touch the shared Harness home.
+const portable = applyPortablePaths(app)
+if (portable !== undefined) console.info('desktop: portable data at', portable.dshHome)
+
 // Platform-conventional logs directory (macOS ~/Library/Logs/<name>, otherwise under userData);
 // set before ready so the first fatal report already resolves under it.
-app.setAppLogsPath()
+if (portable === undefined) app.setAppLogsPath()
 
 function currentDesktopLocale(): ReturnType<typeof resolveDesktopLocale> {
   return resolveDesktopLocale(windowsLanguage ?? app.getLocale())
@@ -708,7 +715,11 @@ async function main(): Promise<void> {
       }
       return true
     },
-    undefined, undefined, undefined,
+    undefined,
+    // A portable copy has no installer to hand a downloaded update to and its update
+    // feed is not the installed release's; polling would only offer a version it cannot install.
+    portable === undefined ? undefined : () => false,
+    undefined,
     (success, reason) => { void track('desktop_upgrade_download_result', { is_success: success, ...reason === undefined ? {} : { error_reason: reason } }) },
     updateChannel,
   )
@@ -881,7 +892,13 @@ async function main(): Promise<void> {
       if (joinedPolicyAuthentication) await authenticatePolicy()
       if (isMandatory()) {
         mandatoryUI?.focus()
-        if (manual) await Promise.all([checkPolicyManually(), updateSchedule.check(true)])
+        if (manual) await Promise.all([checkPolicyManually(), ...portable === undefined ? [updateSchedule.check(true)] : []])
+        return
+      }
+      // A portable copy cannot install a download, so the check reports that instead of polling a feed.
+      if (portable !== undefined) {
+        await ordinaryMessageBox({ type: 'info', title: locale.messages.updateCheckTitle,
+          message: locale.messages.updatePortableUnavailable })
         return
       }
       let controller: AbortController | undefined
@@ -991,7 +1008,7 @@ async function main(): Promise<void> {
 
   const automaticCheck = (): void => {
     if (!quitting) void mandatoryPolicy?.check('foreground-or-resume').catch((error: unknown) => { console.error(error) })
-    if (!quitting) void updateSchedule.check().catch((error: unknown) => { console.error(error) })
+    if (!quitting && portable === undefined) void updateSchedule.check().catch((error: unknown) => { console.error(error) })
   }
   powerMonitor.on('resume', automaticCheck)
   app.on('will-quit', () => {
@@ -1030,7 +1047,8 @@ async function main(): Promise<void> {
         click: () => { void showAbout().catch((error: unknown) => { console.error(error) }) } }
       : { label: currentDesktopLocale().messages.aboutMenu, role: 'about' },
     { type: 'separator' },
-    { label: currentDesktopLocale().messages.checkUpdatesMenu, click: () => { void openUpdatePrompt(true) } },
+    ...portable === undefined
+      ? [{ label: currentDesktopLocale().messages.checkUpdatesMenu, click: () => { void openUpdatePrompt(true) } }] : [],
     { label: currentDesktopLocale().messages.copyWebLinkMenu, click: () => {
       // The URL carries the pairing code; pasting it into a browser pairs that
       // browser, so the user owns where it goes.
@@ -1039,7 +1057,9 @@ async function main(): Promise<void> {
     { label: currentDesktopLocale().messages.pairedDevicesMenu, click: () => {
       void showBrowserSessions().catch((error: unknown) => { console.error(error) })
     } },
-    ...process.platform === 'darwin' || process.platform === 'win32'
+    // The `dsh` command and its PATH entry belong to the installed dsh; a portable
+    // copy never offers to replace them.
+    ...portable === undefined && (process.platform === 'darwin' || process.platform === 'win32')
       ? [{ label: currentDesktopLocale().messages.cliCommandMenu, click: () => { void commandManager.show() } }] : [],
     ...development ? [
       { type: 'separator' as const },
@@ -1316,7 +1336,10 @@ async function main(): Promise<void> {
     window.focus()
   }
 
-  if (app.isPackaged || process.env.DSH_DESKTOP_DEV_APP === '1') app.setAsDefaultProtocolClient('dsh')
+  // A portable copy leaves `dsh://` with the installed dsh on this machine: whichever
+  // application registers last wins the handler, so a folder that can be deleted
+  // must not take it.
+  if (portable === undefined && (app.isPackaged || process.env.DSH_DESKTOP_DEV_APP === '1')) app.setAsDefaultProtocolClient('dsh')
   app.on('open-url', (event, url) => {
     event.preventDefault()
     if (url === 'dsh://open' || url === 'dsh://open/') focusPrimaryWindow()
@@ -1397,7 +1420,9 @@ async function main(): Promise<void> {
         if (!wasBlocking) updateDialog.cancel()
       }
       mandatoryUI?.sync()
-      if (state.blocking && !wasBlocking) void updateSchedule.check(false, true).catch((error: unknown) => { console.error(error) })
+      if (state.blocking && !wasBlocking && portable === undefined) {
+        void updateSchedule.check(false, true).catch((error: unknown) => { console.error(error) })
+      }
       wasBlocking = state.blocking
     }, policyAuth?.request, () => desktopClientMetadata(locale.id))
     const policy = mandatoryPolicy
@@ -1406,7 +1431,7 @@ async function main(): Promise<void> {
       preload: fileURLToPath(new URL('./preload-mandatory.cjs', import.meta.url)), locale,
       allowedPageOrigins: policyConfig.allowedPageOrigins, parent: () => mainWindow,
       policy: () => policy.state, update: () => updates.state,
-      refresh: async () => { await Promise.all([checkPolicyManually(), updateSchedule.check(true)]) },
+      refresh: async () => { await Promise.all([checkPolicyManually(), ...portable === undefined ? [updateSchedule.check(true)] : []]) },
       download: downloadUpdate, install: version => updates.install(version),
     })
     void mandatoryPolicy.check('launch').then((state) => {

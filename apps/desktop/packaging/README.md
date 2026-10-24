@@ -200,6 +200,8 @@ pnpm run package:desktop:dir
 pnpm run package:desktop:mac:arm64:dir
 ```
 
+This fork ships Windows as one unsigned portable folder: `pnpm run package:desktop:win:x64:portable` ignores `.env.windows`, uses `com.deepseek.harness` as the app ID, and builds `win-unpacked` under `apps/desktop/.desktop-build/targets/win-x64/unsigned-artifacts/`. Packaged Windows copies run in [portable mode](../README.md#portable-mode), and that folder is the complete distribution input; create no installer or update-feed object.
+
 To inspect or troubleshoot the prepared host-target resources without invoking electron-builder, stop the same pipeline after preparation:
 
 ```sh

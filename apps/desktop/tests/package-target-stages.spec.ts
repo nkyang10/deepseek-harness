@@ -102,6 +102,17 @@ it.each(['--unsigned', '--prepare-only'])('keeps %s hardware-free and creates no
   expect(stages.includes('exec tsx scripts/smoke-packaged-runtime.ts --unsigned')).toBe(mode === '--unsigned')
 })
 
+it('marks the packaged Windows directory as portable without requiring release configuration', async () => {
+  const { run } = supervisor()
+  await packageTarget(parseDesktopPackageInvocation(['win-x64', '--unsigned', '--dir'], 'win32', 'x64'), {
+    ...environment, DSH_DESKTOP_APP_ID: 'com.deepseek.harness', DSH_DESKTOP_PORTABLE: '1',
+  }, run)
+  const builder = run.run.mock.calls.find(call => call[0].includes('electron-builder'))
+  const prepared = run.run.mock.calls.find(call => call[0] === 'run prepare:dsh')
+  expect(builder?.[3].env).toMatchObject({ DSH_DESKTOP_PORTABLE: '1', DSH_DESKTOP_UNSIGNED: '1' })
+  expect(prepared?.[3].env).toMatchObject({ DSH_DESKTOP_PORTABLE: '1', DSH_DESKTOP_UNSIGNED: '1' })
+})
+
 it('checks the assembled macOS runtime before notarizing and recording the release', async () => {
   const { run, stages } = supervisor()
   vi.mocked(packageMacOSArtifacts).mockImplementationOnce(async () => {

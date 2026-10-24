@@ -13,6 +13,7 @@ Desktop 在原生应用中运行 Harness 工作区。本参考文档说明应用
 ## 目录
 
 - [应用概览](#application-overview)
+- [便携模式](#portable-mode)
 - [终端命令](#terminal-command)
 - [关闭窗口与退出](#closing-the-window-and-quitting)
 - [关键技术决策](#key-technical-decisions)
@@ -51,6 +52,16 @@ Desktop Host 的 Platform API 请求与更新策略请求用相同的 Platform �
 桌面麦克风访问仅允许主 `dsh-app://app` 页面发起的音频请求。macOS 使用系统麦克风授权、随包用途说明，以及主应用与 Helper 签名中的 `com.apple.security.device.audio-input` 权限。
 
 按 F12（多媒体功能键键盘上为 Fn+F12）、macOS 的 Command+Option+I 或 Windows 的 Ctrl+Shift+I，可切换当前获得焦点的应用页面的 DevTools，打包版本同样支持。这些原生快捷键通过隐藏的应用菜单项注册。更新遮罩和打包版本的内嵌浏览器禁用 DevTools。
+
+<a id="portable-mode"></a>
+
+## 便携模式
+
+每个 Windows 打包副本都会把数据存储到可执行文件旁的 `data`：Harness 主目录变为 `data/dsh-home`（在 Host 启动前以 `DSH_HOME` 发布），Electron 用户数据变为 `data/electron-data`，崩溃日志变为 `data/logs`。不会从 `~/.dsh` 或 `%APPDATA%` 读取或写入任何内容，因此便携副本可以与官方安装版并存，使用后直接删除即可，不会影响安装版。
+
+便携副本不会占据任何系统级资源：它不注册 `dsh://` 协议处理程序，不提供 **管理 dsh 命令**（`dsh` 的 PATH 条目），也不检查或安装更新；**检查更新**会提示使用者下载新的发布文件夹。`dsh` 命令、其 PATH 条目、协议处理程序与更新器都留给安装版。开发运行和非 Windows 打包版继续使用上述共享目录与安装版行为。
+
+Windows 打包版在 Host 启动前创建 `data`，并在可执行文件所在位置无法承载时直接报错。它不会导入现有的 `~/.dsh`，因此会话、凭据与提供商设置都从空白开始；需要保留的文件应在首次启动前手动复制到 `data/dsh-home`，或通过设置页面重新配置。
 
 <a id="terminal-command"></a>
 

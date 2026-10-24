@@ -200,6 +200,8 @@ pnpm run package:desktop:dir
 pnpm run package:desktop:mac:arm64:dir
 ```
 
+本分支仅发布一个未签名的 Windows 便携文件夹：`pnpm run package:desktop:win:x64:portable` 会忽略 `.env.windows`，使用应用标识 `com.deepseek.harness`，并在 `apps/desktop/.desktop-build/targets/win-x64/unsigned-artifacts/` 下构建 `win-unpacked`。Windows 打包版会启用[便携模式](../README.zh.md#portable-mode)；该文件夹就是完整发行输入，不再制作安装包或更新源对象。
+
 需要检查或诊断为宿主目标准备的资源而不调用 electron-builder 时，可以让同一流水线在准备完成后停止：
 
 ```sh
