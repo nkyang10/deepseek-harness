@@ -4,6 +4,7 @@ import { parseArgs } from 'node:util'
 import { desktopArtifactOutput, resolveDesktopBuildTarget, resolveDesktopTargetBuildPaths } from './desktop-build-paths.mjs'
 import { readDesktopRuntime, verifyDesktopRuntime } from '../src/runtime-tree.ts'
 import { verifyWindowsCode } from './windows-runtime-signature.mjs'
+import { windowsApplicationExecutableName } from './windows-application-name.mjs'
 import { smokePreparedRuntime } from './smoke-prepared-runtime.ts'
 import { resolveDesktopPackageTarget } from './package-target.ts'
 
@@ -15,7 +16,10 @@ const artifacts = desktopArtifactOutput(paths, { unsigned: values.unsigned, skip
 const application = windows ? join(artifacts, 'win-unpacked')
   : join(artifacts, target === 'mac-arm64' ? 'mac-arm64' : 'mac', 'DeepSeek Harness.app', 'Contents')
 const resources = join(application, windows ? 'resources' : 'Resources')
-const executable = windows ? join(application, 'DeepSeek Harness.exe') : join(application, 'MacOS', 'DeepSeek Harness')
+const portable = process.env.DSH_DESKTOP_PORTABLE === '1'
+const executable = windows
+  ? join(application, `${windowsApplicationExecutableName(portable)}.exe`)
+  : join(application, 'MacOS', 'DeepSeek Harness')
 const descriptor = await verifyDesktopRuntime(paths.dsh, readDesktopRuntime(paths.dsh).release.version,
   resolveDesktopPackageTarget(target))
 if (windows && !values.unsigned) await verifyWindowsCode(application)

@@ -61,7 +61,7 @@ import { DesktopUpdateOverlays } from './update-overlay.ts'
 import { DesktopQuitConfirmation } from './quit-confirmation.ts'
 import { DesktopTray } from './tray.ts'
 import { DesktopBackgroundNotice } from './background-notice.ts'
-import { applyPortablePaths } from './portable.ts'
+import { applyPortablePaths, markPortableWindow } from './portable.ts'
 
 let focusPrimaryWindow = (): void => {}
 let stopForRecovery = async (): Promise<void> => {}
@@ -85,7 +85,10 @@ const rendererConsole = new RendererConsoleTail()
 // its children resolve a root. Failing here is fatal: a portable copy without a writable
 // data directory cannot keep its promise not to touch the shared Harness home.
 const portable = applyPortablePaths(app)
-if (portable !== undefined) console.info('desktop: portable data at', portable.dshHome)
+if (portable !== undefined) {
+  console.info('desktop: portable data at', portable.dshHome)
+  app.on('browser-window-created', (_event, window) => { markPortableWindow(window) })
+}
 
 // Platform-conventional logs directory (macOS ~/Library/Logs/<name>, otherwise under userData);
 // set before ready so the first fatal report already resolves under it.
@@ -249,6 +252,7 @@ function createWindow(preload: string, show = false, primary = false): BrowserWi
     if (['http:', 'https:'].includes(new URL(url).protocol)) void shell.openExternal(url)
     return { action: 'deny' }
   })
+
   if (process.platform === 'darwin' || process.platform === 'win32') {
     // Fullscreen hides native window controls; overlays drop their caption clearance.
     const sendFullscreen = (): void => {

@@ -35,6 +35,7 @@ export interface DesktopElectronBuilderConfig {
     readonly writeUpdateInfo: boolean
   }
   readonly win: {
+    readonly executableName: string
     readonly forceCodeSigning: boolean
     readonly signtoolOptions: {
       readonly publisherName: string | undefined

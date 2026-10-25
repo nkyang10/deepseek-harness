@@ -104,6 +104,7 @@ const harness = await vi.hoisted(async () => {
     readonly setBackgroundColor = vi.fn()
     constructor(readonly options: { show: boolean; modal?: boolean }) {
       super(); if (windowFailure !== undefined) throw windowFailure; windows.push(this)
+      app.emit('browser-window-created', {}, this)
     }
     isDestroyed() { return this.destroyed }
     fullscreen = false
@@ -123,7 +124,8 @@ const harness = await vi.hoisted(async () => {
     setMenu() {}
     getContentBounds() { return { x: 0, y: 0, width: 900, height: 650 } }
     setBounds() {}
-    setTitle = vi.fn()
+    title = 'Desktop test'
+    setTitle = vi.fn((value: string) => { this.title = value })
     destroy() { this.destroyed = true; this.emit('closed') }
     close() {
       const event = { preventDefault: vi.fn() }
@@ -1090,7 +1092,7 @@ describe('desktop main startup', () => {
     vi.spyOn(process, 'platform', 'get').mockReturnValue(platform)
     const exeDirectory = mkdtempSync(join(tmpdir(), 'dsh-main-portable-'))
     onTestFinished(() => { rmSync(exeDirectory, { recursive: true, force: true }) })
-    const paths = resolvePortablePaths(join(exeDirectory, 'DeepSeek Harness.exe'))
+    const paths = resolvePortablePaths(join(exeDirectory, 'DeepSeek Harness Portable.exe'))
     portableHarness.paths = paths
     await import('../src/main.ts')
     await harness.preparing.promise
@@ -1104,7 +1106,7 @@ describe('desktop main startup', () => {
   })
 
   it('reports update unavailability when the product Updates surface opens a portable copy', async () => {
-    portableHarness.paths = resolvePortablePaths('C:\\portable\\DeepSeek Harness.exe')
+    portableHarness.paths = resolvePortablePaths('C:\\portable\\DeepSeek Harness Portable.exe')
     await readyWorkspace()
     expect(harness.updateCheck).not.toHaveBeenCalled()
     harness.dialog.showMessageBox.mockResolvedValueOnce({ response: 0, checkboxChecked: false })
@@ -1113,6 +1115,19 @@ describe('desktop main startup', () => {
       title: en.updateCheckTitle, message: en.updatePortableUnavailable,
     }))
     expect(harness.updateCheck).not.toHaveBeenCalled()
+  })
+
+  it('marks portable window titles and keeps renderer title changes marked', async () => {
+    portableHarness.paths = resolvePortablePaths('C:\\portable\\DeepSeek Harness Portable.exe')
+    await readyWorkspace()
+    const window = harness.windows[0]!
+    window.setTitle.mockClear()
+    window.emit('ready-to-show')
+    expect(window.title).toBe('Desktop test (Portable)')
+    const event = { preventDefault: vi.fn() }
+    window.emit('page-title-updated', event, 'Task')
+    expect(event.preventDefault).toHaveBeenCalledOnce()
+    expect(window.title).toBe('Task (Portable)')
   })
 
   it.each(['en-US', 'zh-CN'])('localizes macOS application commands without changing the application name (%s)', async (locale) => {

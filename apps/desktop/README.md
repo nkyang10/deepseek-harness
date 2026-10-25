@@ -57,7 +57,7 @@ Press F12 (Fn+F12 on media-key keyboards), Command+Option+I on macOS, or Ctrl+Sh
 
 ## Portable mode
 
-Every packaged Windows copy stores its data under `data` beside the executable: the Harness home becomes `data/dsh-home` (published as `DSH_HOME` before the Host starts), Electron user data becomes `data/electron-data`, and crash logs become `data/logs`. Nothing is read from or written to `~/.dsh` or `%APPDATA%`, so a portable copy can be unpacked beside an official installation, used, and deleted without changing it.
+Every packaged Windows copy stores its data under `data` beside the executable: the Harness home becomes `data/dsh-home` (published as `DSH_HOME` before the Host starts), Electron user data becomes `data/electron-data`, and crash logs become `data/logs`. Portable folders ship `DeepSeek Harness Portable.exe`, and their windows append ` (Portable)` to their titles so the copy is visually distinct from an installed product. Nothing is read from or written to `~/.dsh` or `%APPDATA%`, so a portable copy can be unpacked beside an official installation, used, and deleted without changing it.
 
 A portable copy never claims a machine-wide surface: it does not register the `dsh://` protocol handler, does not offer **Manage dsh Command** (the `dsh` PATH entry), and does not check for or install updates; **Check for Updates** reports that a new release folder is the update path. The `dsh` command, its PATH entry, the protocol handler, and the updater stay with the installed dsh. Development and non-Windows launches keep the shared roots and installed behavior.
 

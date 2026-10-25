@@ -27,6 +27,7 @@ import { desktopArtifactOutput, desktopTargetBuildPaths, resolveDesktopBuildTarg
 import { installWindowsDirectoryInstaller } from './windows-directory-installer.mjs'
 import { preserveWindowsRuntimeSignature, signWindowsCode } from './windows-runtime-signature.mjs'
 import { prepareWindowsAsarUnpack, verifyWindowsAsarUnpack } from './windows-asar-unpack.mjs'
+import { windowsApplicationExecutableName } from './windows-application-name.mjs'
 import { recordPackagingEvent } from './packaging-run.mjs'
 import {
   resolveMacOSAppUpdateFeed,
@@ -244,6 +245,7 @@ export function createElectronBuilderConfig(
     },
     win: {
       icon: fileURLToPath(new URL('../resources/icon-windows.png', import.meta.url)),
+      executableName: windowsApplicationExecutableName(portable),
       forceCodeSigning: !unsigned,
       signtoolOptions: {
         sign: windowsSigner,

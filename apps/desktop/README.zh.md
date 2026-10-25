@@ -57,7 +57,7 @@ Desktop Host 的 Platform API 请求与更新策略请求用相同的 Platform �
 
 ## 便携模式
 
-每个 Windows 打包副本都会把数据存储到可执行文件旁的 `data`：Harness 主目录变为 `data/dsh-home`（在 Host 启动前以 `DSH_HOME` 发布），Electron 用户数据变为 `data/electron-data`，崩溃日志变为 `data/logs`。不会从 `~/.dsh` 或 `%APPDATA%` 读取或写入任何内容，因此便携副本可以与官方安装版并存，使用后直接删除即可，不会影响安装版。
+每个 Windows 打包副本都会把数据存储到可执行文件旁的 `data`：Harness 主目录变为 `data/dsh-home`（在 Host 启动前以 `DSH_HOME` 发布），Electron 用户数据变为 `data/electron-data`，崩溃日志变为 `data/logs`。便携文件夹以 `DeepSeek Harness Portable.exe` 发行，其窗口标题附加 ` (Portable)`，因此可与安装版在视觉上区分。不会从 `~/.dsh` 或 `%APPDATA%` 读取或写入任何内容，因此便携副本可以与官方安装版并存，使用后直接删除即可，不会影响安装版。
 
 便携副本不会占据任何系统级资源：它不注册 `dsh://` 协议处理程序，不提供 **管理 dsh 命令**（`dsh` 的 PATH 条目），也不检查或安装更新；**检查更新**会提示使用者下载新的发布文件夹。`dsh` 命令、其 PATH 条目、协议处理程序与更新器都留给安装版。开发运行和非 Windows 打包版继续使用上述共享目录与安装版行为。
 

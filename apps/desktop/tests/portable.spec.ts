@@ -2,7 +2,11 @@ import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { beforeEach, expect, it, onTestFinished, vi } from 'vitest'
-import { PORTABLE_DATA_DIR, applyPortablePaths, isPortableLaunch, resolvePortablePaths } from '../src/portable.ts'
+import type { BrowserWindow } from 'electron'
+import { EventEmitter } from 'node:events'
+import {
+  PORTABLE_DATA_DIR, applyPortablePaths, isPortableLaunch, markPortableWindow, markPortableWindowTitle, resolvePortablePaths,
+} from '../src/portable.ts'
 
 let root: string
 let exePath: string
@@ -10,7 +14,7 @@ const originalHome = process.env.DSH_HOME
 
 beforeEach(() => {
   root = mkdtempSync(join(tmpdir(), 'dsh-desktop-portable-'))
-  exePath = join(root, 'DeepSeek Harness.exe')
+  exePath = join(root, 'DeepSeek Harness Portable.exe')
   onTestFinished(() => {
     rmSync(root, { recursive: true, force: true })
     if (originalHome === undefined) delete process.env.DSH_HOME
@@ -28,6 +32,30 @@ function application(paths: Record<string, string> = {}, isPackaged = true) {
 
 it('makes packaged Windows applications portable without an opt-in file', () => {
   expect(isPortableLaunch({ platform: 'win32', packaged: true })).toBe(true)
+})
+
+it('marks every portable window title once', () => {
+  const marked = markPortableWindowTitle('Task')
+  expect(marked).toBe('Task (Portable)')
+  expect(markPortableWindowTitle(marked)).toBe(marked)
+})
+
+it('keeps portable window titles marked through display and renderer updates', () => {
+  const window = Object.assign(new EventEmitter(), {
+    title: 'Task', destroyed: false,
+    isDestroyed: () => window.destroyed,
+    setTitle: vi.fn((value: string) => { window.title = value }),
+  })
+  markPortableWindow(window as unknown as BrowserWindow)
+  window.emit('ready-to-show')
+  expect(window.title).toBe('Task (Portable)')
+  const event = { preventDefault: vi.fn() }
+  window.emit('page-title-updated', event, 'Session')
+  expect(event.preventDefault).toHaveBeenCalledOnce()
+  expect(window.title).toBe('Session (Portable)')
+  window.destroyed = true
+  window.emit('page-title-updated', event, 'Hidden')
+  expect(window.title).toBe('Session (Portable)')
 })
 
 it.each([

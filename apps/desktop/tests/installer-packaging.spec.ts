@@ -76,6 +76,7 @@ describe('installer preparation preserves application dependencies', () => {
       DSH_DESKTOP_PORTABLE: '1',
     }, 'win32', 'x64')
     expect(Object.hasOwn(portable, 'extraFiles')).toBe(false)
+    expect(portable.win.executableName).toBe('DeepSeek Harness Portable')
     expect(portable.extraMetadata).not.toHaveProperty('dshMandatoryUpdatePolicy')
     expect(() => createElectronBuilderConfig({
       DSH_DESKTOP_APP_ID: 'com.deepseek.harness',
@@ -104,6 +105,7 @@ describe('installer preparation preserves application dependencies', () => {
       DSH_DESKTOP_UNSIGNED: '1',
     }, 'win32', 'x64')
     expect(config.artifactName).toBe('deepseek-harness-${version}-${os}-${arch}-unsigned.${ext}')
+    expect(config.win.executableName).toBe('DeepSeek Harness')
   })
 
   it('packages every preload entry point the shell loads', async () => {

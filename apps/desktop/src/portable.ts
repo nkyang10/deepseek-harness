@@ -13,9 +13,39 @@
 
 import { mkdirSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
+import type { BrowserWindow } from 'electron'
 
 /** Directory beside the executable that holds every portable data root. */
 export const PORTABLE_DATA_DIR = 'data'
+
+/** Suffix that keeps a portable window visually distinct from an installed copy. */
+export const PORTABLE_WINDOW_TITLE_SUFFIX = ' (Portable)'
+
+/**
+ * Add the portable suffix once to a Desktop window title.
+ * @param title - Current title supplied by Electron or the renderer.
+ * @returns the same title when already marked, otherwise the suffixed title.
+ */
+export function markPortableWindowTitle(title: string): string {
+  return title.endsWith(PORTABLE_WINDOW_TITLE_SUFFIX) ? title : `${title}${PORTABLE_WINDOW_TITLE_SUFFIX}`
+}
+
+/**
+ * Keep a Desktop window title marked as portable through its first display and
+ * subsequent renderer title updates.
+ * @param window - Window created by the portable Desktop application.
+ * @returns No value; listeners remain attached for the window's lifetime.
+ */
+export function markPortableWindow(window: BrowserWindow): void {
+  const mark = (title: string): void => {
+    if (!window.isDestroyed()) window.setTitle(markPortableWindowTitle(title))
+  }
+  window.once('ready-to-show', () => { mark(window.title) })
+  window.on('page-title-updated', (event, title) => {
+    event.preventDefault()
+    mark(title)
+  })
+}
 
 /** Portable-owned roots, resolved before Electron or the Host reads them. */
 export interface PortablePaths {
