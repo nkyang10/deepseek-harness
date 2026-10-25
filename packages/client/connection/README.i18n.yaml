@@ -3,8 +3,8 @@
 # After editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write packages/client/connection/README.md
 /:
-  en: 13b131457d03a224
-  zh: 6dedd0706d5ffc0a
+  en: fec55665af7be89b
+  zh: c1831711df74f579
 /deepseek-ai-dsh-client-connection:
   en: 142fb403b92c8af8
   zh: bb52a8ccf7ca4402
@@ -12,14 +12,14 @@
   en: a83b5e9fd1968062
   zh: ac68628e185a4bff
 /deepseek-ai-dsh-client-connection/table-of-contents:
-  en: 18792bf2fb4f8030
-  zh: 84c63acc7e0099ae
+  en: 2d53ccb0d218ccad
+  zh: ecfe04c0df323d11
 /deepseek-ai-dsh-client-connection/use-this-package:
-  en: da6810858bf74a86
-  zh: d623e510ec74520f
-/deepseek-ai-dsh-client-connection/browser-authentication-and-request-trust:
-  en: b8315e660ced82b9
-  zh: e608491e4709e8c6
+  en: 11b206c7b8a38342
+  zh: cca2cafb395c6be6
+/deepseek-ai-dsh-client-connection/request-trust-and-peers:
+  en: 6479a91149149fde
+  zh: a41471f80893be43
 /deepseek-ai-dsh-client-connection/connection-generation:
   en: d9fe48c025ace7ce
   zh: 0e23b299fbf25ae6
@@ -30,8 +30,8 @@
   en: ca75c51c89c2c9b0
   zh: de54f3467ef3b9be
 /deepseek-ai-dsh-client-connection/known-limitations-and-deferred-work:
-  en: f8035ad04312ecd5
-  zh: f2339b9a69915a60
+  en: b75edae1c3570642
+  zh: 5f7af2c1a7c0a818
 /deepseek-ai-dsh-client-connection/known-limitations-and-deferred-work/dev-note:
   en: e67f633dc6fe7773
   zh: e88aeb617ffb74ea

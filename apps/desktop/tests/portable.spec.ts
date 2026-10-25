@@ -41,12 +41,12 @@ it('marks every portable window title once', () => {
 })
 
 it('keeps portable window titles marked through display and renderer updates', () => {
-  const window = Object.assign(new EventEmitter(), {
+  const window = Object.assign(new EventEmitter() as BrowserWindow, {
     title: 'Task', destroyed: false,
     isDestroyed: () => window.destroyed,
     setTitle: vi.fn((value: string) => { window.title = value }),
   })
-  markPortableWindow(window as unknown as BrowserWindow)
+  markPortableWindow(window)
   window.emit('ready-to-show')
   expect(window.title).toBe('Task (Portable)')
   const event = { preventDefault: vi.fn() }

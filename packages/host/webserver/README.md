@@ -54,13 +54,13 @@ Set `compression: 'gzip'` to wrap eligible socket-backed responses without chang
       keyFile: /etc/dsh/tls/key.pem
 ```
 
-`ctx.webServer.protocol` reads `'http:'` or `'https:'` for the bound listener, so a plugin that keys request policy — a session cookie's `Secure` flag, an origin check — on the transport reads one configuration-derived value instead of inspecting sockets or trusting forwarded headers. Clients still verify the certificate you supplied: this carrier ships no trust store, no HTTP-to-HTTPS redirect, and no HSTS header.
+`ctx.webServer.protocol` reads `'http:'` or `'https:'` for the bound listener, so a plugin that keys request policy, such as an origin check, on the transport reads one configuration-derived value instead of inspecting sockets or trusting forwarded headers. Clients still verify the certificate you supplied: this carrier ships no trust store, no HTTP-to-HTTPS redirect, and no HSTS header.
 
 ### Registering routes
 
 `register(route)` adds a named `exact` or `prefix` HTTP route, `registerUpgrade(route)` adds an upgrade route for an exact pathname, and both return a disposer that removes the registration. A duplicate path within either table throws — route patterns are a composition-level contract, so a collision is a misconfiguration. HTTP matching is exact over the whole table, then longest prefix, then the fallback; upgrades match exactly and unmatched connections are closed.
 
-A named route may give `resource(request, peer?)` instead of `handler`: a function from a Fetch `Request` to a `Response`. Over HTTP only `GET` and `HEAD` reach it — any other method is answered 405 with `Allow: GET, HEAD` and its body is never read — and the request carries no Peer, the client's headers, and a URL that is the request target resolved against a placeholder origin; the client's authority stays only in the `host` header. The response is written back with backpressure and the gzip decision a handler's response gets; `HEAD` sends no body, and a client disconnect aborts `request.signal` and cancels the body. `readResource(request, peer)` returns the response the same URL would receive over HTTP, computed by the resource for `peer` (a `HEAD` read returns no body): it follows the HTTP match order, answers 404 when the path belongs to a handler or reaches a fallback that is unclaimed or a handler, answers 405 for a method other than `GET` or `HEAD`, and checks no cookie, Host, or Origin, so its caller admits the reader first.
+A named route may give `resource(request, peer?)` instead of `handler`: a function from a Fetch `Request` to a `Response`. Over HTTP only `GET` and `HEAD` reach it — any other method is answered 405 with `Allow: GET, HEAD` and its body is never read — and the request carries no Peer, the client's headers, and a URL that is the request target resolved against a placeholder origin; the client's authority stays only in the `host` header. The response is written back with backpressure and the gzip decision a handler's response gets; `HEAD` sends no body, and a client disconnect aborts `request.signal` and cancels the body. `readResource(request, peer)` returns the response the same URL would receive over HTTP, computed by the resource for `peer` (a `HEAD` read returns no body): it follows the HTTP match order, answers 404 when the path belongs to a handler or reaches a fallback that is unclaimed or a handler, answers 405 for a method other than `GET` or `HEAD`, and checks no Host or Origin, so its caller admits the reader first.
 
 ### The fallback seat
 
@@ -129,7 +129,7 @@ None; this package neither assembles nor sends a provider request.
 These limits define where the server is intentionally minimal. They are current package constraints, not a task backlog.
 
 - **No certificate lifecycle** — `tls` serves the PEM files present at activation: the carrier never provisions, renews, or watches them, and it applies Node's default TLS policy. Replacing a certificate takes a reload.
-- **No server-wide authentication or origin policy** — route owners such as `dsh-client-connection` enforce their own request policy. Binding a non-loopback address still exposes unprotected routes and static assets to that network.
+- **No server-wide request policy** — route owners such as `dsh-client-connection` enforce their own request policy. Binding a non-loopback address exposes every route and static asset on that listener to the network as its owner.
 - **Socket options are fixed** — config selects the bind host and port, while backlog and other socket settings remain internal until a deployment needs them.
 
 <a id="dev-note"></a>

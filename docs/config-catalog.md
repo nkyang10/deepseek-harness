@@ -457,11 +457,10 @@ export type Config = LocalConfig
 
 ## `@deepseek-ai/dsh-client-connection`
 
-- `inject`: `credentials`
-- `source`: [`packages/client/connection/src/index.ts:97`](../packages/client/connection/src/index.ts)
+- `source`: [`packages/client/connection/src/index.ts:90`](../packages/client/connection/src/index.ts)
 
 ```ts config-catalog
-/** Browser authentication, request limits, and connection recovery configuration. */
+/** Request limits and connection recovery configuration. */
 export interface ConnectionConfig {
   /** Browser recovery timing, injected into each served page. */
   recovery?: ConnectionRecoveryConfig
@@ -472,8 +471,6 @@ export interface ConnectionConfig {
    * an entry here. A non-canonical or non-bare authority fails plugin load.
    */
   trustedHosts?: string[]
-  /** Absolute browser and API cookie lifetime in days. Default: 30. */
-  cookieMaxAgeDays?: number
   /** Maximum buffered JSON body for every `/api` request. Default: 300 MiB. */
   maxRequestBodyBytes?: number
 }
@@ -1638,7 +1635,7 @@ export interface Config {
 ## `@deepseek-ai/dsh-host-frontend-static`
 
 - `inject`: `webServer` · `connection`
-- `source`: [`packages/host/frontend-static/src/index.ts:34`](../packages/host/frontend-static/src/index.ts)
+- `source`: [`packages/host/frontend-static/src/index.ts:33`](../packages/host/frontend-static/src/index.ts)
 
 ```ts config-catalog
 /** Plugin config: the dist anchor. */
@@ -1655,7 +1652,7 @@ export interface Config {
 ## `@deepseek-ai/dsh-host-open-in-app`
 
 - `inject`: `webServer` · `connection` · `subprocess`
-- `source`: [`packages/host/open-in-app/src/index.ts:50`](../packages/host/open-in-app/src/index.ts)
+- `source`: [`packages/host/open-in-app/src/index.ts:49`](../packages/host/open-in-app/src/index.ts)
 
 ```ts config-catalog
 /** Open-in-app host configuration. */

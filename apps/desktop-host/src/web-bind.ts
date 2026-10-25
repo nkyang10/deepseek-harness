@@ -90,7 +90,7 @@ export async function resolveDesktopWebBind(
  * launcher's former loopback literal so the shell window and LAN browsers
  * share the listener.
  * @param webServer - the running Web listener's protocol, bind address, and port.
- * @returns the clean application URL; the caller adds the pairing code.
+ * @returns the application URL.
  * @throws when the listener has not bound a port yet.
  */
 export function desktopWebUrl(webServer: { readonly protocol: 'http:' | 'https:'; readonly host: string; readonly port: number | undefined }): string {

@@ -1,4 +1,4 @@
-# Agent Note: 每个已认证浏览器共用 Host 偏好
+# Agent Note: 每个被放行的浏览器共用 Host 偏好
 
 Status: implemented
 
@@ -10,17 +10,17 @@ Status: implemented
 
 ## 决策
 
-本地性不选择任何东西。一个 `settings.describe` 镜像、由它派生的逐 namespace `ctx.configForms.get(entryId)`，以及 `settings.mutate` 写入路径服务每个已认证浏览器。Connection API 的浏览器令牌认证是身份边界；固定的 `remote.$host` 本地性事实只是请求路由的依据，没有任何存储选择器会读取它。镜像的状态空间只有 `idle`、`loading` 与 `ready`，表单快照不携带 mode，表单也只有在 Host 未注册该 namespace 时才报告 `unavailable`。
+本地性不选择任何东西。一个 `settings.describe` 镜像、由它派生的逐 namespace `ctx.configForms.get(entryId)`，以及 `settings.mutate` 写入路径服务每个被放行的浏览器。Host/Origin 栅栏处的准入就是身份边界：每个被放行的浏览器都是 owner（[决策](../architecture/2026-10-25-web-reachability-is-authority.zh.md)）；固定的 `remote.$host` 本地性事实只是请求路由的依据，没有任何存储选择器会读取它。镜像的状态空间只有 `idle`、`loading` 与 `ready`，表单快照不携带 mode，表单也只有在 Host 未注册该 namespace 时才报告 `unavailable`。
 
-settings 外壳保留唯一一个依赖本地性的 UI 元素：它依据 `ctx.remote.$host.isLoopback` 构造文档控制器，因此只有回环页面会渲染**打开配置文件**并发出其背后的 `hasDocument` 读取。`settings/openSettingsDocument` Remote 本身与其他 Host 方法一样保持浏览器认证；省略该操作是面向看不到 Host 原生编辑器的页面的展示选择，而非持久化规则。
+settings 外壳保留唯一一个依赖本地性的 UI 元素：它依据 `ctx.remote.$host.isLoopback` 构造文档控制器，因此只有回环页面会渲染**打开配置文件**并发出其背后的 `hasDocument` 读取。`settings/openSettingsDocument` Remote 本身与其他 Host 方法一样处于同一栅栏之后；省略该操作是面向看不到 Host 原生编辑器的页面的展示选择，而非持久化规则。
 
 ## 曾考虑的替代方案
 
-**保留内存分支的本地性门禁。** 已否决：浏览器令牌认证已覆盖远程页面的每个 Host 方法，该门禁保护不了任何东西，而本地性只是请求路由的依据而非身份。它还会让受信远程与公共部署上每一行依赖 Host 的界面失效。
+**保留内存分支的本地性门禁。** 已否决：栅栏准入已覆盖远程页面的每个 Host 方法，该门禁保护不了任何东西，而本地性只是请求路由的依据而非身份。它还会让受信远程与公共部署上每一行依赖 Host 的界面失效。
 
 ## 后果
 
-每个访问同一 Host 的已认证浏览器共用一份偏好文档。同一部署上的两个浏览器会看到彼此选择的 Appearance、Language、繁忙态 Enter 与欢迎提示确认，远程写入的值就是回环浏览器下一次加载的值。偏好可访问性由 API 认证与 `settings.describe.writable` 决定。
+每个访问同一 Host 的被放行浏览器共用一份偏好文档。同一部署上的两个浏览器会看到彼此选择的 Appearance、Language、繁忙态 Enter 与欢迎提示确认，远程写入的值就是回环浏览器下一次加载的值。偏好可访问性由栅栏准入与 `settings.describe.writable` 决定。
 
 远程页面省略**打开配置文件**操作，这是仍依赖本地性的唯一 UI 元素。同一文档上的并发写入由各表单作为 `expectedRevision` 发送的 namespace revision 裁决。
 

@@ -1,6 +1,7 @@
 # Agent Note: Durable browser pairing with revocable sessions
 
 Status: implemented
+Archived: 2026-10-25
 
 English | [中文](2026-10-17-durable-browser-pairing.zh.md)
 

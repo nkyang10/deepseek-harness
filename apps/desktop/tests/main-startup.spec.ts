@@ -21,7 +21,7 @@ type InvokeHandler = (event: InvokeEvent, ...args: unknown[]) => unknown
 const fileDrag = vi.hoisted(() => ({ dispose: vi.fn<() => Promise<void>>(), install: vi.fn() }))
 vi.mock('../src/file-drag.ts', () => ({ installDesktopFileDrag: () => { fileDrag.install(); return fileDrag.dispose } }))
 
-vi.mock('../src/web-document.ts', () => ({ authenticateWebHost: async () => 'test-cookie', serveWebDocument: vi.fn(), forwardWebRequest: vi.fn() }))
+vi.mock('../src/web-document.ts', () => ({ serveWebDocument: vi.fn(), forwardWebRequest: vi.fn() }))
 // Report persistence has its own unit tests; here it resolves within microtasks so the fatal
 // dialog never outlives the test that triggered it.
 vi.mock('../src/crash-report.ts', async importOriginal => ({
@@ -152,11 +152,7 @@ const harness = await vi.hoisted(async () => {
   class FakeHost {
     readonly updateTasks = vi.fn(async (_action: 'inspect' | 'lock' | 'unlock') => false)
     readonly inspectQuit = vi.fn(async () => ({ activeTasks: false, scheduledTasks: false }))
-    readonly browserSessions = vi.fn(async (action: 'list' | 'revoke' | 'rotate', deviceId?: string) => ({
-      sessions: deviceId === 'phone' ? [] : [{ id: 'phone', userAgent: 'Phone/1.0', pairedAt: 1_772_000_000_000, lastSeenAt: 1_772_000_100_000, expiresAt: 1_774_000_000_000 }],
-      ...action === 'rotate' ? { url: 'http://127.0.0.1:3080/?token=rotated' } : {},
-    }))
-    url = 'http://127.0.0.1:3080/?token=test'
+    url = 'http://127.0.0.1:3080/'
     fetch = vi.fn(async () => Response.json({ hasApiKey: true, writable: true, localePreference: null }))
     readonly ready = deferred()
     readonly exited = deferred()
@@ -411,7 +407,7 @@ vi.mock('../src/platform-view.ts', async importOriginal => ({
   },
 }))
 vi.mock('../src/welcome-backend.ts', () => ({
-  connectDesktopWelcome: async () => ({
+  connectDesktopWelcome: () => ({
     analyticsEnabled: async () => harness.analyticsEnabled,
     report: harness.analytics,
     readLocalePreference: async () => null,
@@ -1028,7 +1024,7 @@ describe('desktop main startup', () => {
     expect(() => handler(event, 'application', NaN, 34)).toThrow('invalid popup request')
     const application = handler(event, 'application', 48, 34)
     expect(harness.menu.buildFromTemplate.mock.lastCall![0].map(item => item.label ?? item.type)).toEqual([
-      '关于 DeepSeek Harness', 'separator', '检查更新…', '复制网页链接', '已配对设备…', '管理 dsh 命令…', 'separator', '退出',
+      '关于 DeepSeek Harness', 'separator', '检查更新…', '复制网页链接', '管理 dsh 命令…', 'separator', '退出',
     ])
     expect(harness.popup.mock.lastCall![0]).toMatchObject({ window, x: 48, y: 34 })
     expect(harness.popup.mock.lastCall![0].callback).toBeTypeOf('function')
@@ -1050,49 +1046,6 @@ describe('desktop main startup', () => {
     await edit
   })
 
-  it('lists paired browsers, confirms a revocation, and adopts a rotated pairing code', async () => {
-    vi.spyOn(process, 'platform', 'get').mockReturnValue('darwin')
-    const host = await readyWorkspace()
-    const pairedDevices = (): MenuItemConstructorOptions =>
-      applicationMenuItems().find(item => item.label === en.pairedDevicesMenu)!
-    const click = async (item: MenuItemConstructorOptions): Promise<void> => {
-      item.click!(undefined as never, undefined, undefined as never)
-      // This suite runs on fake timers, so pending promises settle by advancing them.
-      await vi.advanceTimersByTimeAsync(0)
-    }
-
-    await click(pairedDevices())
-    expect(host.browserSessions).toHaveBeenLastCalledWith('list', undefined)
-    const popup = harness.menu.buildFromTemplate.mock.lastCall![0]
-    expect(popup.map((item: MenuItemConstructorOptions) => item.label ?? item.type)).toEqual([
-      '1 paired', 'separator', expect.stringContaining('Phone/1.0'), 'separator', en.pairedDeviceRotateItem,
-    ])
-    expect(harness.popup).toHaveBeenLastCalledWith({ window: harness.windows[0] })
-
-    // A cancelled confirmation leaves the session alone.
-    harness.dialog.showMessageBox.mockResolvedValueOnce({ response: 1 })
-    const revoke = (popup[2]!.submenu as MenuItemConstructorOptions[])[0]!
-    expect(revoke.label).toBe(en.pairedDeviceRevokeItem)
-    await click(revoke)
-    const confirmation = harness.dialog.showMessageBox.mock.lastCall![0] as { message?: string; detail?: string; cancelId?: number }
-    expect(confirmation.message).toBe(en.pairedDeviceRevokeTitle)
-    expect(confirmation.detail).toContain('Phone/1.0')
-    expect(confirmation.cancelId).toBe(1)
-    expect(host.browserSessions).not.toHaveBeenCalledWith('revoke', expect.anything())
-
-    // A confirmed one ends exactly that session.
-    harness.dialog.showMessageBox.mockResolvedValueOnce({ response: 0 })
-    await click(revoke)
-    expect(host.browserSessions).toHaveBeenLastCalledWith('revoke', 'phone')
-
-    // Rotation adopts the replacement code, so Copy Web Link stops sharing the old one.
-    harness.clipboard.writeText.mockClear()
-    await click(popup[4]!)
-    expect(host.browserSessions).toHaveBeenLastCalledWith('rotate', undefined)
-    applicationMenuItems().find(item => item.label === en.copyWebLinkMenu)!.click!(undefined as never, undefined, undefined as never)
-    expect(harness.clipboard.writeText).toHaveBeenLastCalledWith('http://127.0.0.1:3080/?token=rotated')
-  })
-
   it.each(['darwin', 'linux'] as const)('adds the product File menu and standard window commands only on macOS (%s)', async (platform) => {    vi.spyOn(process, 'platform', 'get').mockReturnValue(platform)
     await import('../src/main.ts')
     await harness.preparing.promise
@@ -1107,9 +1060,17 @@ describe('desktop main startup', () => {
       : ['Application', 'editMenu'])
     const application = template[0]!.submenu as MenuItemConstructorOptions[]
     expect(application.filter(item => item.visible !== false).map(describeItem)).toEqual(platform === 'darwin'
-      ? ['about', 'separator', en.checkUpdatesMenu, en.copyWebLinkMenu, en.pairedDevicesMenu, en.cliCommandMenu, 'separator', 'hide', 'hideOthers', 'unhide', 'separator', 'quit']
-      : ['about', 'separator', en.checkUpdatesMenu, en.copyWebLinkMenu, en.pairedDevicesMenu, 'separator', 'quit'])
+      ? ['about', 'separator', en.checkUpdatesMenu, en.copyWebLinkMenu, en.cliCommandMenu, 'separator', 'hide', 'hideOthers', 'unhide', 'separator', 'quit']
+      : ['about', 'separator', en.checkUpdatesMenu, en.copyWebLinkMenu, 'separator', 'quit'])
     expect(harness.menu.setApplicationMenu).toHaveBeenCalledOnce()
+  })
+
+  it('copies the plain Host URL from Copy Web Link', async () => {
+    vi.spyOn(process, 'platform', 'get').mockReturnValue('darwin')
+    const host = await readyWorkspace()
+    const copy = applicationMenuItems().find(item => item.label === en.copyWebLinkMenu)!
+    copy.click!(undefined as never, undefined, undefined as never)
+    expect(harness.clipboard.writeText).toHaveBeenCalledWith(host.url)
   })
 
   it.each(['win32', 'darwin'] as const)('leaves machine-wide surfaces to an installed dsh when portable (%s)', async (platform) => {
@@ -1173,12 +1134,12 @@ describe('desktop main startup', () => {
     } finally { harness.app.name = originalName }
   })
 
-  it.each(['http:', 'https:'] as const)('attaches %s Host socket credentials only to the owned application origin and window', async (protocol) => {
+  it.each(['http:', 'https:'] as const)('rewrites %s loop socket origin only for the owned application window', async (protocol) => {
     await import('../src/main.ts')
     await harness.preparing.promise
     harness.prepared.resolve()
     await harness.hostStarted.promise
-    harness.hosts[0]!.url = `${protocol}//127.0.0.1:3080/?token=test`
+    harness.hosts[0]!.url = `${protocol}//127.0.0.1:3080/`
     harness.hosts[0]!.ready.resolve()
     await Promise.resolve(invoke(DESKTOP_IPC.boot))
     const handler = harness.socketHeaders.mock.calls[0]![1] as (
@@ -1190,7 +1151,7 @@ describe('desktop main startup', () => {
     const details = { url: `${socketProtocol}//127.0.0.1:3080/api/remote.mux`, webContentsId: 42, requestHeaders: { Origin: 'dsh-app://app' } }
     handler(details, callback)
     expect(callback).toHaveBeenLastCalledWith({ requestHeaders: {
-      origin: `${protocol}//127.0.0.1:3080`, cookie: 'test-cookie', 'sec-fetch-site': 'same-origin',
+      origin: `${protocol}//127.0.0.1:3080`, 'sec-fetch-site': 'same-origin',
     } })
     handler({ ...details, requestHeaders: { Origin: 'https://other.example' } }, callback)
     expect(callback).toHaveBeenLastCalledWith({ cancel: true })
@@ -2192,7 +2153,7 @@ describe('desktop main startup', () => {
     await restarted
     expect(fileDrag.install).toHaveBeenCalledTimes(2)
     const replacement = harness.hosts[1]!
-    replacement.url = 'http://127.0.0.1:3099/?token=replacement'
+    replacement.url = 'http://127.0.0.1:3099/'
     if (mandatory) replacement.updateTasks.mockResolvedValue(true)
     const retry = harness.prepareUpdate()
     expect(replacement.updateTasks).not.toHaveBeenCalled()
@@ -2592,7 +2553,7 @@ describe('desktop main startup', () => {
     await harness.dialogShown.promise
     preferences.resolve(Response.json({ hasApiKey: true, localePreference: null }))
     await startup
-    expect(harness.windows[0]!.urls).not.toContain('http://127.0.0.1:3080/?token=test')
+    expect(harness.windows[0]!.urls).not.toContain('http://127.0.0.1:3080/')
     const failureDialog = harness.dialog.showMessageBox.mock.calls[0]![0] as { detail: string }
     expect(failureDialog.detail).toContain('backend exited during startup preferences')
     expect(harness.windows[0]!.show).not.toHaveBeenCalled()

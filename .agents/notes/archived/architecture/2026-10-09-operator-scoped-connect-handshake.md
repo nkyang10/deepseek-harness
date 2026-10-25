@@ -1,6 +1,7 @@
 # Agent Note: Peer-scoped connect handshake
 
 Status: implemented
+Archived: 2026-10-25
 
 English | [中文](2026-10-09-operator-scoped-connect-handshake.zh.md)
 

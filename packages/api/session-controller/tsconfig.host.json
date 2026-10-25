@@ -53,6 +53,9 @@
       "path": "../../client/connection/tsconfig.host.json"
     },
     {
+      "path": "../../credentials/credentials"
+    },
+    {
       "path": "../../interaction/permission-presets"
     },
     {

@@ -316,6 +316,7 @@ describe('real Loader composition', () => {
       ['::0.0.0.1%lo', '[::1]'],
       ['10.1.2.3', '10.1.2.3'],
       ['fd00::1', '[fd00::1]'],
+      ['::127.0.0.1', '[::7f00:1]'],
       // A zone selects an interface and no URL can carry it; only a loopback zone is redundant.
       ['fe80::1%eth0', undefined],
       ['::127.0.0.1%lo', undefined],
@@ -615,7 +616,7 @@ describe('real Loader composition', () => {
     expect(created.headers.get('x-answer')).toBe('yes')
     expect(created.headers.getSetCookie()).toEqual(['a=1; Path=/', 'b=2; Path=/'])
     expect(await created.text()).toBe('RESOURCE')
-    // Host and Cookie reach the resource: browser authentication reads them.
+    // Host and Cookie reach the resource verbatim.
     expect(seen).toEqual({
       url: 'http://x/resource?q=1',
       method: 'GET',

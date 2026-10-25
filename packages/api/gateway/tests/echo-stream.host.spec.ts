@@ -8,7 +8,6 @@ import { Remote, TypertRemoteService, type RemoteStream } from '@deepseek-ai/dsh
 import TypertRegistry from '@deepseek-ai/dsh-typert-registry'
 import TypertGatewayService from '@deepseek-ai/dsh-api-gateway'
 import RemoteAccessService from '@deepseek-ai/dsh-api-remote-access'
-import { browserCookie, provideBrowserCredentials } from './browser-credentials.ts'
 import { ownerPeer } from './peer.ts'
 
 /** The smallest Remote stream that reads its uplink: every carrier has to serve it alike. */
@@ -46,9 +45,7 @@ describe('the echo stream on each carrier', () => {
 
   it('echoes uplink frames through the WebSocket carrier', async () => {
     const ctx = await setup(true)
-    const socket = new WebSocket(`ws://127.0.0.1:${String(ctx.webServer.port)}/api/remote.mux`, {
-      headers: { cookie: await browserCookie(ctx) },
-    })
+    const socket = new WebSocket(`ws://127.0.0.1:${String(ctx.webServer.port)}/api/remote.mux`)
     await once(socket, 'open')
     const frames: unknown[] = []
     socket.on('message', (data) => { frames.push(JSON.parse(rawText(data))) })
@@ -73,7 +70,6 @@ async function setup(transport: boolean): Promise<Context> {
   roots.push(ctx)
   if (transport) {
     await ctx.plugin(WebServer, { host: '127.0.0.1', port: 0 })
-    provideBrowserCredentials(ctx)
   }
   await ctx.plugin(TypertRegistry)
   await ctx.plugin(RemoteAccessService)

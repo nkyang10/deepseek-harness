@@ -58,13 +58,13 @@ function fixture() {
     '    renameSync(config.states + ".tmp", config.states)',
     '  }, 20)',
     '  ctx.effect(() => () => { clearInterval(timer) })',
-    '  ctx.inject(["webServer", "connection"], scope => {',
+    '  ctx.inject(["webServer"], scope => {',
     '    let disposed = false',
     '    scope.effect(() => () => { disposed = true; rmSync(config.url, { force: true }) })',
     // A recovery URL is a readiness signal; sibling HMR work must settle first.
     '    void scope.get("loader").await().then(() => {',
-    '      if (disposed || !scope.get("webServer") || !scope.get("connection")) return',
-    '      writeFileSync(config.url, scope.connection.authenticatedUrl(`http://127.0.0.1:${scope.webServer.port}`))',
+    '      if (disposed || !scope.get("webServer")) return',
+    '      writeFileSync(config.url, `http://127.0.0.1:${scope.webServer.port}`)',
     '    })',
     '  })',
     '}',
@@ -136,16 +136,13 @@ function start(f: ReturnType<typeof fixture>, extra: string[] = [], nodeArgs: st
     await wait(() => /dsh web: http:\/\//u.test(stdout))
     const url = currentServer ? readFileSync(f.serverUrl, 'utf8') : /dsh web: (http:\/\/[^\s]+)/u.exec(stdout)?.[1]
     if (!url) throw new Error('Missing Web URL')
-    const auth = await fetch(url, { redirect: 'manual', signal: AbortSignal.timeout(10_000) })
-    const cookie = auth.headers.get('set-cookie')?.split(';', 1)[0]
-    if (!cookie) throw new Error('Missing Web authentication cookie')
-    const response = await fetch(new URL('/', url), { headers: { cookie }, signal: AbortSignal.timeout(10_000) })
+    const response = await fetch(new URL('/', url), { signal: AbortSignal.timeout(10_000) })
     expect(response.status).toBe(200)
     const html = await response.text()
     expect(html).toContain('__DSH_BOOT__')
     const bundlePath = /<script src="(plugins\/[^"]+)"/u.exec(html)?.[1]?.replaceAll('&amp;', '&')
     if (!bundlePath) throw new Error('Missing bootstrap bundle URL')
-    const bundle = await fetch(new URL(bundlePath, url), { headers: { cookie }, signal: AbortSignal.timeout(10_000) })
+    const bundle = await fetch(new URL(bundlePath, url), { signal: AbortSignal.timeout(10_000) })
     expect(bundle.status).toBe(200)
     expect(await bundle.text()).not.toBe('')
   }

@@ -262,43 +262,22 @@ export class TypertGatewayService extends Service implements TypertGateway {
             compression: resolved.websocketCompression === 'deflate',
           },
         )
-        const releases = new Set<Promise<void>>()
         webCtx.effect(function* () {
           yield async () => {
             await mux.close()
-            await Promise.all(releases)
           }
           const route: WebUpgradeRoute = {
             path: REMOTE_STREAM_MUX_PATH,
             handler: (req, socket, head) => {
-              const admission = webCtx.connection.admitConnection(req)
+              const admission = webCtx.connection.admit(req)
               if ('rejection' in admission) {
                 rejectRemoteStreamUpgrade(socket, admission.rejection)
                 return
               }
-              const release = (): void => {
-                // release removes the API Peer synchronously, before awaiting
-                // scope cleanup or any logical-stream iterator's return.
-                const done = admission.release().catch((error: unknown) => {
-                  console.error('[api-gateway] Peer release failed:', error)
-                })
-                releases.add(done)
-                void done.then(() => { releases.delete(done) })
-              }
-              const closed = (): void => {
-                socket.removeListener('error', release)
-                release()
-              }
-              socket.on('error', release)
-              socket.once('close', closed)
-              if (socket.destroyed) {
-                closed()
-                return
-              }
+              if (socket.destroyed) return
               try {
                 mux.handleUpgrade(req, socket, head, admission.peer)
               } catch (error) {
-                release()
                 socket.destroy()
                 console.error('[api-gateway] Remote stream upgrade failed:', error)
               }

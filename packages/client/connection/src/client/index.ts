@@ -12,10 +12,10 @@ import { createWebConnectionRpc, type RpcFetch, type RpcStreamOpen } from './rpc
 import { isLoopbackHostname } from '../loopback-hostname.ts'
 import type { ClientConnectionRpc } from '../rpc.ts'
 import { resolveConnectionConfig } from '../recovery-config.ts'
-import type { ConnectionInteractions } from '../connect-protocol.ts'
+import type { ConnectionInteractions } from '../rpc.ts'
 import { openConnectionWebSocket, type ConnectionWebSocket, type ConnectionWebSocketFactory } from './socket.ts'
 
-export type { ConnectionInteractions } from '../connect-protocol.ts'
+export type { ConnectionInteractions } from '../rpc.ts'
 export type { ConnectionWebSocket, ConnectionWebSocketFactory } from './socket.ts'
 
 declare module '@deepseek-ai/cordis' {
@@ -113,7 +113,7 @@ export interface ClientTransportHooks {
    * transport can set this; served pages never carry the global at all.
    */
   ownsHost?: boolean
-  /** Authenticated WebSocket factory; omission uses the browser API and its cookie jar. */
+  /** WebSocket factory; omission uses the browser API. */
   createWebSocket?: ConnectionWebSocketFactory
   /** Host base URL for desktop or Node sockets; omission uses the document base. */
   streamBaseUrl?: string

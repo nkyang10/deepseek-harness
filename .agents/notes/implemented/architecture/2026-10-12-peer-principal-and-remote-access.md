@@ -68,7 +68,7 @@ export class Peer implements PeerScope {
 }
 
 interface HostConnectionHandle {
-  /** The Peer every authenticated browser connection shares; principal { kind: 'owner' }. */
+  /** The owner Peer every browser connection shares; principal { kind: 'owner' }. */
   readonly browserPeer: PeerScope
   /** Network admission: the admitted Peer or the refusal status. */
   admit(request: ConnectionTrustRequest): PeerAdmission
@@ -497,8 +497,8 @@ GlobalStandardProps.useWorkspaceAccess: (workspaceId: WorkspaceId, action: Remot
 | Invariant | Basis and enforcement point |
 |---|---|
 | Only in-process Host code supplies a principal, when it creates a Peer | `PeerScope.principal` is read-only; `createPeer()` has no route |
-| No wire field can set or override a principal | Principals never come from args, the envelope, headers, the query, or cookies. Extra top-level args fields fail `assertExactArguments`; the payload must be exactly `{ args }`; [`clientRequestSchema`](../../../../packages/client/connection/src/rpc-schema.ts) drops unknown envelope fields; a same-named field inside a request body is business data |
-| Browser network admission yields the owner | Connections that pass [browser token authentication](../../implemented/architecture/2026-08-24-browser-token-authentication.md) receive `browserPeer` |
+| No wire field can set or override a principal | Principals never come from args, the envelope, headers, or the query. Extra top-level args fields fail `assertExactArguments`; the payload must be exactly `{ args }`; [`clientRequestSchema`](../../../../packages/client/connection/src/rpc-schema.ts) drops unknown envelope fields; a same-named field inside a request body is business data |
+| Browser network admission yields the owner | Every request that passes the Host/Origin fence is admitted as `browserPeer` ([Reachability is the Web authority](2026-10-25-web-reachability-is-authority.md)) |
 | No implicit Peer | Neither the Gateway nor Connection supplies a default Peer; required parameters expose a missing Peer at compile time |
 | A disposed Peer cannot dispatch | `gateway/peer-disposed` |
 | A non-owner cannot call without authorization | A call is allowed only when a binding's role explicitly lists the action and its resource matches; a kind without a policy is refused; the Gateway depends on `remoteAccess` and does not start without it |
@@ -550,7 +550,7 @@ The review rule's home is the "`@Remote` marks capability methods" section of [R
 
 ### Out of scope and future work
 
-- The API-only `/connect` handshake, API cookies, one Peer per API connection, and WebSocket lifetimes are described in [Peer-scoped connect handshake](2026-10-09-operator-scoped-connect-handshake.md).
+- The API `/connect` handshake and its per-connection API Peers were removed with browser pairing; network admission yields only `browserPeer`, and the archived [Peer-scoped connect handshake](../../archived/architecture/2026-10-09-operator-scoped-connect-handshake.md) records the earlier design.
 - Multiple browser Peers (such as one per tab): every browser connection shares `browserPeer`.
 - Interaction participation is attached to each Peer. A non-owner with `interactions: 'answer'` still receives only RBAC-authorized broadcast frames and cannot answer owner waterfalls; per-principal approval handling remains outside this mechanism.
 - `agent-preset/selected` and the other forwarded events declare no resources and are decided on `global`; when its viewers need a Session event, #3854 declares that event's resources and lists `event:<name>` in a role.
@@ -564,7 +564,7 @@ The review rule's home is the "`@Remote` marks capability methods" section of [R
 ### Relation to existing Notes
 
 - [Remote duplex stream](../../implemented/architecture/2026-09-19-remote-duplex-stream.md): partially superseded. The replaced parts are "the Peer records no identity or permission", "this Host has exactly one Peer, the operator", "an in-process carrier without a Peer means the operator", and its alternative stating that "the Access mechanism is business semantics"; the rest (the duplex stream, uplink, and `ctx.invocation` binding) stands. Both Notes stay active and cross-linked, and that Note's current facts are updated.
-- [Browser token authentication](../../implemented/architecture/2026-08-24-browser-token-authentication.md): unaffected. Its rejection of per-method privilege concerns owner authentication; an authenticated browser is still the owner and is not checked per method.
+- [Browser token authentication](../../archived/architecture/2026-08-24-browser-token-authentication.md): superseded by [Reachability is the Web authority](2026-10-25-web-reachability-is-authority.md). Its rejection of per-method privilege still holds for the owner: every admitted browser is the owner and is not checked per method.
 - [Typert Remote method calls](../../implemented/architecture/2026-08-02-typert-remote-method-calls.md): unaffected; `@Remote` and `@RemoteScope` gain optional `resources` readers (the second argument of `@RemoteScope` may be `{ name?, resources? }`), read only by the Gateway's access check, and change neither endpoint naming, call modes, nor generated artifacts.
 - [Producer-owned message sources](../../implemented/architecture/2026-09-09-producer-owned-message-sources.md): unaffected; the producer that builds a source writes `principal`.
 

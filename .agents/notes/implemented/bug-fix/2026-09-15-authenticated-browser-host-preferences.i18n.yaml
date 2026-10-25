@@ -2,21 +2,21 @@
 # section, a hash of its English and Chinese blocks outside code blocks and generated regions.
 # After editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/bug-fix/2026-09-15-authenticated-browser-host-preferences.md
-/agent-note-share-host-preferences-with-every-authenticated-browser:
-  en: f4b8b4500f8dca9c
-  zh: bf27ded54fba703b
-/agent-note-share-host-preferences-with-every-authenticated-browser/problem:
+/agent-note-share-host-preferences-with-every-admitted-browser:
+  en: 91ddd9609dc1120f
+  zh: ef5fb775f36c616e
+/agent-note-share-host-preferences-with-every-admitted-browser/problem:
   en: 22bf57b616581253
   zh: d1108a4042646e21
-/agent-note-share-host-preferences-with-every-authenticated-browser/decision:
-  en: 2d54784b8b3558cf
-  zh: 31190a9b284867b7
-/agent-note-share-host-preferences-with-every-authenticated-browser/alternatives-considered:
-  en: 299105745b084fc0
-  zh: 8c2d82de44ac2aad
-/agent-note-share-host-preferences-with-every-authenticated-browser/consequences:
-  en: 520028b8c4031009
-  zh: 8c130624261538cc
-/agent-note-share-host-preferences-with-every-authenticated-browser/testing:
+/agent-note-share-host-preferences-with-every-admitted-browser/decision:
+  en: 617e135a85a5227c
+  zh: 2bcea1283ea6bad2
+/agent-note-share-host-preferences-with-every-admitted-browser/alternatives-considered:
+  en: d8b08a044b6084e3
+  zh: 09d771c39d967308
+/agent-note-share-host-preferences-with-every-admitted-browser/consequences:
+  en: b5d5de53b725ce63
+  zh: 8cf73d64ca1982c7
+/agent-note-share-host-preferences-with-every-admitted-browser/testing:
   en: e433f139fe72e69f
   zh: 279cc8b1cd3d5377

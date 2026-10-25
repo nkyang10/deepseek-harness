@@ -123,15 +123,6 @@ describe.skipIf(!requiredArtifacts)('Goal Remote built LIB chain', () => {
       }
       const apiRoute = apiRoutes[0]
       const server = createServer((request, response) => {
-        if ((request.url ?? '/').startsWith('/?')) {
-          void host.connection.authorizeIndex(request, response).then((allowed) => {
-            if (allowed) {
-              response.writeHead(200, { 'content-type': 'text/html' })
-              response.end('<body>shell</body>')
-            }
-          })
-          return
-        }
         void apiRoute.handler(request, response)
       })
       await new Promise(resolveListen => server.listen(0, '127.0.0.1', resolveListen))
@@ -144,15 +135,7 @@ describe.skipIf(!requiredArtifacts)('Goal Remote built LIB chain', () => {
       const previousFetch = globalThis.fetch
       try {
         globalThis.document = { baseURI: origin + '/' }
-        const login = await fetch(host.connection.authenticatedUrl(origin), { redirect: 'manual' })
-        const setCookie = login.headers.get('set-cookie')
-        if (login.status !== 303 || setCookie === null) throw new Error('browser token exchange failed')
-        const cookie = setCookie.split(';', 1)[0]
-        globalThis.fetch = (input, init = {}) => {
-          const headers = new Headers(init.headers)
-          headers.set('cookie', cookie)
-          return previousFetch(new URL(input, document.baseURI), { ...init, headers })
-        }
+        globalThis.fetch = (input, init = {}) => previousFetch(new URL(input, document.baseURI), init)
 
         const handoffs = new Map()
         globalThis.window = {

@@ -92,12 +92,16 @@ export async function apply(ctx: Context, config: HostPluginConfig): Promise<voi
       })
       disposers.push(ctx.webServer.register({
         kind: 'prefix', path: DEVTOOLS_PATH,
-        handler: async (req, res) => {
+        handler: (req, res) => {
           if (req.method !== 'GET' && req.method !== 'HEAD') {
             res.writeHead(405, { allow: 'GET, HEAD' }).end()
             return
           }
-          if (!await ctx.connection.authorizeIndex(req, res)) return
+          const rejection = ctx.connection.requestRejection(req)
+          if (rejection !== undefined) {
+            res.writeHead(rejection).end(rejection === 401 ? 'unauthorized' : 'forbidden')
+            return
+          }
           const url = new URL(req.url ?? '/', 'http://inspector.invalid')
           if (url.pathname === DEVTOOLS_PATH || url.pathname === `${DEVTOOLS_PATH}/`) {
             const location = `${url.pathname === DEVTOOLS_PATH ? 'devtools/' : ''}devtools_app.html${url.search}`

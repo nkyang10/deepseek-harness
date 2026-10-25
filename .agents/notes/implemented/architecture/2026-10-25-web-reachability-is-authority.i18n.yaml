@@ -1,0 +1,22 @@
+# Bilingual-pair consistency record for 2026-10-25-web-reachability-is-authority.md (docs/i18n/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write .agents/notes/implemented/architecture/2026-10-25-web-reachability-is-authority.md
+/agent-note-reachability-is-the-web-authority:
+  en: 0db1b51c8ec878b9
+  zh: f923c9025a115c43
+/agent-note-reachability-is-the-web-authority/problem:
+  en: 8316b304c448e770
+  zh: 1e12cb3135547c10
+/agent-note-reachability-is-the-web-authority/decision:
+  en: 7e70050b7b65ed9c
+  zh: fb9843750ae6a514
+/agent-note-reachability-is-the-web-authority/alternatives-considered:
+  en: 400121d4207a83ca
+  zh: e4d6643fb94e42a7
+/agent-note-reachability-is-the-web-authority/consequences:
+  en: aa1da6d364406be6
+  zh: 1a6ef6c35b0ff478
+/agent-note-reachability-is-the-web-authority/verification:
+  en: ca98e360572b3f85
+  zh: b5f8525965bfb057

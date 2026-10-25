@@ -6,11 +6,11 @@
   en: c31a8b2eeced1d7a
   zh: 718b29b0f1e3f995
 /agent-note-web-app-owned-routes-are-document-relative/problem:
-  en: ce92162dd5ef0b2a
-  zh: a487cfd441b9fe1a
+  en: 8ebb5dc31fe0cd3d
+  zh: 0107f8fe14f05356
 /agent-note-web-app-owned-routes-are-document-relative/decision:
-  en: 5d61f3f037df8f7e
-  zh: fbea19a5868d45b9
+  en: 6724a5905fcef0df
+  zh: c4237d3806d4a96a
 /agent-note-web-app-owned-routes-are-document-relative/alternatives-considered:
   en: 14cd7d83f28ef818
   zh: 5a429ab09dae43e5
@@ -18,5 +18,5 @@
   en: e3601f867e8c1825
   zh: 5c7ba5acb63a98a3
 /agent-note-web-app-owned-routes-are-document-relative/testing:
-  en: 3845fc2e126b858c
-  zh: 5a63b358be90e565
+  en: 9433b3f67ed66185
+  zh: dba09ce4de457897

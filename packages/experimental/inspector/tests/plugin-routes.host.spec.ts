@@ -7,7 +7,6 @@ import { Context } from '@deepseek-ai/cordis'
 import type { Message } from '@deepseek-ai/cordis'
 import type { WebRoute, WebServer, WebUpgradeRoute } from '@deepseek-ai/dsh-host-webserver'
 import { HostConnectionService } from '@deepseek-ai/dsh-client-connection'
-import type { BrowserAuth } from '@deepseek-ai/dsh-client-connection/src/browser-auth.ts'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { apply, Config, inject, name } from '../src/index.ts'
 import { startInspector, type InspectorHandle } from '../src/host/bridge/controller.ts'
@@ -49,7 +48,7 @@ describe('experimental Inspector Host DevTools routes', () => {
     vi.clearAllMocks()
   })
 
-  async function mount(options: { indexAllowed?: () => boolean; before?: (ctx: Context) => void } = {}) {
+  async function mount(options: { before?: (ctx: Context) => void } = {}) {
     context = new Context()
     vi.spyOn(console, 'log').mockImplementation(() => undefined)
     const routes: WebRoute[] = []
@@ -59,17 +58,7 @@ describe('experimental Inspector Host DevTools routes', () => {
       registerUpgrade: (route) => { upgrades.push(route); return () => {} },
     }
     context.provide('webServer', webServer as WebServer)
-    const auth: Pick<BrowserAuth, 'isAuthenticated' | 'authenticateApi' | 'authorizeIndex'> = {
-      isAuthenticated: () => true,
-      authenticateApi: () => undefined,
-      authorizeIndex: (_request, response) => {
-        if (options.indexAllowed?.() !== false) return Promise.resolve(true)
-        response.writeHead(401)
-        response.end()
-        return Promise.resolve(false)
-      },
-    }
-    new HostConnectionService(context, [], auth as BrowserAuth)
+    new HostConnectionService(context, [])
     const messages: Message[] = []
     context.logger.exporter({ levels: { default: 3 }, export: (message) => { messages.push(message) } })
     options.before?.(context)
@@ -77,13 +66,12 @@ describe('experimental Inspector Host DevTools routes', () => {
     return { fiber, routes, upgrades, messages }
   }
 
-  it('answers frontend requests by method, index authorization, redirect, and asset outcome', async () => {
-    let indexAllowed = true
-    const { fiber, routes, messages } = await mount({ indexAllowed: () => indexAllowed })
+  it('answers frontend requests by method, trust fence, redirect, and asset outcome', async () => {
+    const { fiber, routes, messages } = await mount()
     await fiber.await()
     const route = routes.find(row => row.path === '/inspector/devtools')
     if (route === undefined) throw new Error('DevTools route was not registered')
-    const call = async (method: string | undefined, url: string | undefined, headersSent = false) => {
+    const call = async (method: string | undefined, url: string | undefined, headersSent = false, headers: Record<string, string> = { host: '127.0.0.1' }) => {
       const recorded: RecordedResponse = { headers: {}, ended: false, destroyed: false }
       const res = {
         get headersSent() { return headersSent },
@@ -96,15 +84,14 @@ describe('experimental Inspector Host DevTools routes', () => {
         end() { recorded.ended = true; return this },
         destroy() { recorded.destroyed = true; return this },
       }
-      const req = { method, url, headers: {} }
+      const req = { method, url, headers }
       await route.handler(req as IncomingMessage, res as ServerResponse)
       return { recorded, req }
     }
 
     expect((await call('POST', '/inspector/devtools/devtools_app.html')).recorded).toMatchObject({ status: 405, headers: { allow: 'GET, HEAD' }, ended: true })
-    indexAllowed = false
-    expect((await call('GET', '/inspector/devtools/devtools_app.html')).recorded.status).toBe(401)
-    indexAllowed = true
+    expect((await call('GET', '/inspector/devtools/devtools_app.html', false, { host: 'inspector.example' })).recorded)
+      .toMatchObject({ status: 403, ended: true })
     expect(assets.middleware).not.toHaveBeenCalled()
     expect((await call('GET', '/inspector/devtools?panel=console')).recorded).toMatchObject({
       status: 302, headers: { location: 'devtools/devtools_app.html?panel=console' },
@@ -135,7 +122,7 @@ describe('experimental Inspector Host DevTools routes', () => {
       .map((message): unknown => message.args[1])).toEqual([failure, failure])
   })
 
-  it('proxies authenticated CDP upgrades with their WebSocket headers and early bytes to the Worker', async () => {
+  it('proxies CDP upgrades with their WebSocket headers and early bytes to the Worker', async () => {
     const { fiber, upgrades } = await mount()
     await fiber.await()
     const upgrade = upgrades.find(row => row.path === '/inspector/devtools/cdp')

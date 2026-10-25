@@ -15,8 +15,8 @@
   en: 4d6d03b0a3702a5e
   zh: c3c094d6ac23fbd9
 /deepseek-harness-desktop/application-overview:
-  en: df22d6fa3f90e730
-  zh: 2fb74c8476562cc1
+  en: f3de36a5232df757
+  zh: 4cd9e14caf2a7339
 /deepseek-harness-desktop/portable-mode:
   en: fb4d99e8302c3557
   zh: a46a9b2801477823
@@ -30,14 +30,14 @@
   en: 3724c53da4f7647b
   zh: 76ae549d43c99bb4
 /deepseek-harness-desktop/key-technical-decisions/bundled-workspace-dependencies:
-  en: 3368ff9b955ada69
-  zh: e9209ef6ad4fd305
+  en: 1d09b8a382f7c4fd
+  zh: 87af39a3e00d92a7
 /deepseek-harness-desktop/bundled-command-runtime:
   en: 372297005b57a08b
   zh: 074a635ac17e4362
 /deepseek-harness-desktop/installation-ownership:
-  en: 160b500cdcd6a39a
-  zh: 6c267f1762ec3689
+  en: 229a13797d693885
+  zh: 5685f4c6a80630e1
 /deepseek-harness-desktop/installation-ownership/runtime-and-plugin-activation:
   en: a1a47b09f4a72ba4
   zh: 7b1cf27f0b72cf31
@@ -45,8 +45,8 @@
   en: 84a9cc7ca9455aa8
   zh: 4091b8aa8231b74a
 /deepseek-harness-desktop/installation-ownership/web-listener-bind:
-  en: 6cc9a41346838426
-  zh: b2c80cfb4f18f70b
+  en: 34960fc86ff2b2a7
+  zh: d18c1606475b4ca7
 /deepseek-harness-desktop/develop:
   en: faf7676ba18bbf2f
   zh: f1d7b75ad348c548
@@ -63,8 +63,8 @@
   en: 9b90a2651a6d2b52
   zh: 86d4d9c4358aad80
 /deepseek-harness-desktop/updates:
-  en: 67bf0a18faa7aa76
-  zh: 782e14ce62bb939f
+  en: ada6d3fc547d12c9
+  zh: 4503684990dc14f9
 /deepseek-harness-desktop/updates/local-desktop-settings:
   en: 2e57457c44c85b5f
   zh: 5b8510a3dc4c6c9d

@@ -121,7 +121,7 @@ describe.skipIf(!existsSync(builtHost))('built Desktop welcome flow', () => {
         dsh: project,
       })
       await manager.applyRelease()
-      writeFileSync(join(paths.profile, 'cordis.patch.yml'), `- id: webserver\n  config:\n    host: 127.0.0.1\n    port: 0\n- id: deepseek-account\n  config:\n${process.platform === 'linux' ? '    desktopPlatform: darwin\n' : ''}    platformOrigin: ${platform.origin}\n    allowLoopbackHttp: true\n    requestHeaders:\n      Cookie: test_gate=synthetic\n`)
+      writeFileSync(join(paths.profile, 'cordis.patch.yml'), `- id: webserver\n  config:\n    host: 127.0.0.1\n    port: 0\n- id: deepseek-account\n  config:\n    desktopPlatform: ${process.platform === 'win32' ? 'win32' : 'darwin'}\n    platformOrigin: ${platform.origin}\n    allowLoopbackHttp: true\n    requestHeaders:\n      Cookie: test_gate=synthetic\n`)
       let backend: DesktopWelcomeBackend
       let hostOrigin = ''
       const restart = async (): Promise<void> => {
@@ -129,21 +129,13 @@ describe.skipIf(!existsSync(builtHost))('built Desktop welcome flow', () => {
         host = new DesktopHostProcess(process.execPath, project, paths.profile)
         const { url } = await host.start()
         hostOrigin = new URL(url).origin
-        let cookie = ''
-        const send: typeof fetch = async (input, init) => {
-          const headers = new Headers(init?.headers)
-          if (cookie !== '') headers.set('cookie', cookie)
-          const response = await fetch(input, { ...init, headers, redirect: 'manual' })
-          if (response.status !== 303) return response
-          cookie = response.headers.getSetCookie().map(value => value.split(';')[0]).join('; ')
-          await response.body?.cancel()
-          return fetch(new URL(response.headers.get('location')!, url), { headers: { cookie } })
-        }
-        backend = await connectDesktopWelcome(url, send, () => Promise.resolve(cookie))
+        backend = connectDesktopWelcome(url, (input, init) => fetch(input, init))
       }
       const status = async () => backend.read()
-      const fingerprint = (): string => createHash('sha256')
-        .update(readFileSync(join(home, '.credentials.yaml'))).digest('hex')
+      const credentialsFile = join(home, '.credentials.yaml')
+      const fingerprint = (): string => existsSync(credentialsFile)
+        ? createHash('sha256').update(readFileSync(credentialsFile)).digest('hex')
+        : 'absent'
       await restart()
       expect(await status()).toMatchObject({ hasApiKey: false, localePreference: null })
       const before = fingerprint()

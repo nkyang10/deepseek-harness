@@ -1,8 +1,7 @@
-/** Real `dsh web` authentication against a temporary Harness home. */
+/** Real `dsh web` reachability and Host fencing against a temporary Harness home. */
 
 import type { ChildProcess } from 'node:child_process'
 import { spawn } from 'node:child_process'
-import { stat } from 'node:fs/promises'
 import { request as httpRequest } from 'node:http'
 import { createRequire } from 'node:module'
 import { createServer } from 'node:net'
@@ -26,10 +25,6 @@ interface RunningWeb {
 interface HttpResult {
   readonly status: number
   readonly body: string
-}
-
-function redact(output: string): string {
-  return output.replace(/([?&]token=)[^\s)]+/gu, '$1<redacted>')
 }
 
 /** Reserve one concrete loopback port, then release it for the CLI process. */
@@ -64,7 +59,7 @@ function cleanEnvironment(root: string, dshHome: string): NodeJS.ProcessEnv {
   }
 }
 
-/** Start the public source CLI and wait for its authenticated readiness URL. */
+/** Start the public source CLI and wait for its readiness URL. */
 async function startWeb(root: string, dshHome: string, port: number): Promise<RunningWeb> {
   const child = spawn(process.execPath, [
     '--import', TSX_LOADER,
@@ -87,7 +82,7 @@ async function startWeb(root: string, dshHome: string, port: number): Promise<Ru
       reject(error)
     }
     const timer = setTimeout(() => {
-      fail(new Error(`dsh web did not become ready:\n${redact(output)}`))
+      fail(new Error(`dsh web did not become ready:\n${output}`))
     }, 90_000)
     const append = (chunk: Buffer | string): void => {
       output = `${output}${String(chunk)}`.slice(-100_000)
@@ -103,7 +98,7 @@ async function startWeb(root: string, dshHome: string, port: number): Promise<Ru
       fail(error)
     })
     child.once('exit', (code) => {
-      fail(new Error(`dsh web exited before readiness (${String(code)}):\n${redact(output)}`))
+      fail(new Error(`dsh web exited before readiness (${String(code)}):\n${output}`))
     })
   })
   return { child, launchUrl, output: () => output }
@@ -120,10 +115,10 @@ async function stopWeb(running: RunningWeb): Promise<void> {
 }
 
 /** POST one real Remote envelope while controlling the wire Host header. */
-function describeSettings(port: number, host: string, cookie?: string): Promise<HttpResult> {
+function describeSettings(port: number, host: string): Promise<HttpResult> {
   const body = JSON.stringify({
     type: 'client-request',
-    rpcId: 'web-auth-real-cli',
+    rpcId: 'web-access-real-cli',
     method: 'settings/describe',
     payload: { args: {} },
   })
@@ -137,7 +132,6 @@ function describeSettings(port: number, host: string, cookie?: string): Promise<
         host,
         'content-type': 'application/json',
         'content-length': Buffer.byteLength(body),
-        ...cookie === undefined ? {} : { cookie },
       },
     }, (res) => {
       const chunks: Uint8Array[] = []
@@ -151,9 +145,9 @@ function describeSettings(port: number, host: string, cookie?: string): Promise<
   })
 }
 
-describe('dsh web authentication through the real CLI', () => {
-  it('rejects a forged loopback Host and preserves the browser cookie across restart', { timeout: 180_000 }, async () => {
-    const root = await mkdtemp(join(tmpdir(), 'dsh-web-auth-real-cli-'))
+describe('dsh web reachability through the real CLI', () => {
+  it('serves cookieless RPC, rejects a rebound Host, and stays reachable across restart', { timeout: 180_000 }, async () => {
+    const root = await mkdtemp(join(tmpdir(), 'dsh-web-access-real-cli-'))
     const dshHome = join(root, '.dsh')
     const port = await freePort()
     let first: RunningWeb | undefined
@@ -163,44 +157,31 @@ describe('dsh web authentication through the real CLI', () => {
       const firstUrl = new URL(first.launchUrl)
       expect(firstUrl.origin).toBe(`http://127.0.0.1:${String(port)}`)
       expect(firstUrl.pathname).toBe('/')
-      expect(firstUrl.searchParams.get('token')).toMatch(/^[A-Za-z0-9_-]{43}$/u)
+      expect(firstUrl.search).toBe('')
 
-      expect(await describeSettings(port, `localhost:${String(port)}`)).toEqual({
-        status: 401,
-        body: 'unauthorized',
+      expect(await describeSettings(port, `evil.example:${String(port)}`)).toEqual({
+        status: 403,
+        body: 'forbidden',
       })
 
-      const exchange = await fetch(first.launchUrl, { redirect: 'manual' })
-      expect(exchange.status).toBe(303)
-      expect(exchange.headers.get('location')).toBe('./')
-      const setCookie = exchange.headers.get('set-cookie')
-      if (setCookie === null) throw new Error('real CLI token exchange omitted Set-Cookie')
-      expect(setCookie).toContain('HttpOnly')
-      expect(setCookie).toContain('SameSite=Strict')
-      expect(setCookie).not.toContain('Secure')
-      const cookie = setCookie.split(';', 1)[0]!
-
-      const authenticated = await describeSettings(port, firstUrl.host, cookie)
-      expect(authenticated.status).toBe(200)
-      const authenticatedBody: unknown = JSON.parse(authenticated.body)
-      expect(authenticatedBody).toMatchObject({
+      const served = await describeSettings(port, firstUrl.host)
+      expect(served.status).toBe(200)
+      const servedBody: unknown = JSON.parse(served.body)
+      expect(servedBody).toMatchObject({
         type: 'server-response',
-        rpcId: 'web-auth-real-cli',
-        result: { ok: true, value: { namespaces: expect.any(Array) as unknown } },
+        rpcId: 'web-access-real-cli',
+        result: { ok: true, value: { namespaces: expect.any(Array) as unknown[] } },
       })
 
       await stopWeb(first)
       first = undefined
       second = await startWeb(root, dshHome, port)
       const secondUrl = new URL(second.launchUrl)
-      expect(secondUrl.searchParams.get('token')).not.toBe(firstUrl.searchParams.get('token'))
-      expect((await describeSettings(port, secondUrl.host, cookie)).status).toBe(200)
-
-      const credentialMode = (await stat(join(dshHome, '.credentials.yaml'))).mode & 0o777
-      expect(credentialMode).toBe(0o600)
+      expect(secondUrl.origin).toBe(`http://127.0.0.1:${String(port)}`)
+      expect((await describeSettings(port, secondUrl.host)).status).toBe(200)
     } catch (error) {
       const evidence = [first?.output(), second?.output()].filter(value => value !== undefined).join('\n')
-      throw new Error(`${error instanceof Error ? error.message : String(error)}\n${redact(evidence)}`, { cause: error })
+      throw new Error(`${error instanceof Error ? error.message : String(error)}\n${evidence}`, { cause: error })
     } finally {
       if (second !== undefined) await stopWeb(second)
       if (first !== undefined) await stopWeb(first)

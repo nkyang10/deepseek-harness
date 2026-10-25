@@ -1,6 +1,7 @@
 # Agent Note: 浏览器启动令牌认证
 
 Status: implemented
+Archived: 2026-10-25
 
 [English](2026-08-24-browser-token-authentication.md) | 中文
 

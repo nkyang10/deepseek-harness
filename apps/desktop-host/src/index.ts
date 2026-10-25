@@ -15,7 +15,6 @@ import { installDesktopUpdateTaskControl } from './update-tasks.ts'
 import { installDesktopQuitInspection } from './quit-inspection.ts'
 import { installPlatformSessionPublisher } from './platform-session.ts'
 import { installOfficeEngineResolution } from './office-engine.ts'
-import { installDesktopBrowserSessions, type BrowserSessionsAction } from './browser-sessions.ts'
 import { desktopWebUrl, resolveDesktopWebBind } from './web-bind.ts'
 
 async function main(): Promise<void> {
@@ -51,7 +50,6 @@ async function main(): Promise<void> {
   const control: {
     updateTasks?: ReturnType<typeof installDesktopUpdateTaskControl>
     quitInspection?: ReturnType<typeof installDesktopQuitInspection>
-    browserSessions?: ReturnType<typeof installDesktopBrowserSessions>
   } = {}
   const send = (message: object): Promise<void> => new Promise((resolve, reject) => {
     if (!process.connected || process.send === undefined) { resolve(); return }
@@ -113,22 +111,6 @@ async function main(): Promise<void> {
       })().catch((error: unknown) => { console.error(error) })
       return
     }
-    if (message.type === 'browser-sessions') {
-      if (!('requestId' in message) || !Number.isSafeInteger(message.requestId)
-        || !('action' in message) || !['list', 'revoke', 'rotate'].includes(String(message.action))) return
-      const deviceId = 'deviceId' in message && typeof message.deviceId === 'string' ? message.deviceId : undefined
-      void (async () => {
-        try {
-          if (stopping !== undefined || control.browserSessions === undefined) throw new Error('desktop pairing: Host is unavailable')
-          const result = await control.browserSessions(message.action as BrowserSessionsAction, deviceId)
-          await send({ type: 'browser-sessions', requestId: message.requestId, ...result })
-        } catch (error) {
-          await send({ type: 'browser-sessions', requestId: message.requestId, sessions: [],
-            error: error instanceof Error ? error.message : String(error) })
-        }
-      })().catch((error: unknown) => { console.error(error) })
-      return
-    }
     if (message.type !== 'update-tasks' || !('requestId' in message) || !Number.isSafeInteger(message.requestId)
       || !('action' in message) || !['inspect', 'lock', 'unlock'].includes(String(message.action))) return
     void (async () => {
@@ -146,12 +128,6 @@ async function main(): Promise<void> {
   const { ctx } = await application
   control.updateTasks = installDesktopUpdateTaskControl(ctx)
   control.quitInspection = installDesktopQuitInspection(ctx)
-  // Rotation replaces the code inside the running Host, so the URL the shell
-  // already holds is rebuilt here rather than reused.
-  control.browserSessions = installDesktopBrowserSessions(
-    ctx,
-    () => ctx.connection.authenticatedUrl(desktopWebUrl(ctx.webServer)),
-  )
   await ctx.plugin(desktopOffice, {
     runtimeDir,
     source: process.argv[4] ?? join(runtimeDir, '..', 'runtime', 'primary-runtime'),
@@ -160,7 +136,7 @@ async function main(): Promise<void> {
   installPlatformSessionPublisher(ctx, (session) => {
     if (process.connected) process.send?.({ type: 'platform-session', session })
   })
-  const url = ctx.connection.authenticatedUrl(desktopWebUrl(ctx.webServer))
+  const url = desktopWebUrl(ctx.webServer)
   if (process.connected) process.send?.({ type: 'ready', url, injections: ctx.webServer.collectIndexInjections(ctx.connection.browserPeer) }, (error) => { if (error !== null) console.error(error) })
 }
 

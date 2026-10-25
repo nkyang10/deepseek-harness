@@ -24,7 +24,7 @@ import {
 } from 'electron'
 import { resolveDesktopPaths } from './paths.ts'
 import { DesktopProjectManager } from './project-manager.ts'
-import { DesktopHostFatalError, DesktopHostProcess, DesktopHostUncleanExitError, type DesktopBrowserSession } from './host-process.ts'
+import { DesktopHostFatalError, DesktopHostProcess, DesktopHostUncleanExitError } from './host-process.ts'
 import { DesktopPlatformView, PLATFORM_IPC, platformBounds } from './platform-view.ts'
 import { installDesktopFileDrag } from './file-drag.ts'
 import { installDesktopDirectoryPicker } from './directory-picker.ts'
@@ -38,7 +38,7 @@ import { desktopUpdateChannel } from './update-channel.ts'
 import { DesktopUpdateCoordinator } from './update-coordinator.ts'
 import { prepareDesktopUpdateWindow } from './update-window.ts'
 import { DesktopCommandManager } from './command-management.ts'
-import { serveWebDocument, authenticateWebHost, forwardWebRequest } from './web-document.ts'
+import { serveWebDocument, forwardWebRequest } from './web-document.ts'
 import { DesktopFatalRecovery } from './fatal-recovery.ts'
 import { pruneCrashReports, RendererConsoleTail, writeCrashReport, type CrashReportSource } from './crash-report.ts'
 import { openWelcomeWindow } from './welcome-window.ts'
@@ -433,7 +433,6 @@ async function main(): Promise<void> {
   const appPreload = fileURLToPath(new URL('./preload-app.cjs', import.meta.url))
   const applicationUrl = `${SCHEME}://app/`
   let hostUrl: string | undefined
-  let hostCookie: string | undefined
   const browserGuests = new DesktopBrowserGuests(() => hostUrl)
   let injections: readonly unknown[] = []
   let welcomeBackend: DesktopWelcomeBackend | undefined
@@ -485,11 +484,10 @@ async function main(): Promise<void> {
     return {
       start: async () => {
         const ready = await host.start()
-        hostCookie = await authenticateWebHost(ready.url)
         hostUrl = ready.url
         if (ready.injections === undefined) throw new Error('Desktop Host did not provide boot injections')
         injections = ready.injections
-        welcomeBackend = await connectDesktopWelcome(ready.url, (input, init) => net.fetch(input, init), async () => (await session.defaultSession.cookies.get({ url: ready.url })).map(cookie => `${cookie.name}=${cookie.value}`).join('; '))
+        welcomeBackend = connectDesktopWelcome(ready.url, (input, init) => net.fetch(input, init))
         analyticsEnabled = await welcomeBackend.analyticsEnabled().catch(() => false)
         if (!reportedLaunch) { reportedLaunch = true; void track('desktop_app_launch', {}) }
         stopAccount?.()
@@ -543,83 +541,12 @@ async function main(): Promise<void> {
       },
       updateTasks: (action: 'inspect' | 'lock' | 'unlock') => host.updateTasks(action),
       inspectQuit: () => host.inspectQuit(),
-      browserSessions: (action: 'list' | 'revoke' | 'rotate', deviceId?: string) => host.browserSessions(action, deviceId),
       resolveDragResource: (address: string, signal?: AbortSignal) => host.resolveDragResource(address, signal),
     }
   }, (state) => {
     if (state.phase === 'error') reportFatal(state.failure, 'host')
     else if (!shuttingDown) backendReady = state.phase === 'ready'
   })
-
-  /** One paired browser as the device list renders it. */
-  const describeBrowserSession = (session: DesktopBrowserSession): string => {
-    const paired = new Date(session.pairedAt).toLocaleString(currentDesktopLocale().id)
-    const agent = session.userAgent === '' ? locale.messages.pairedDeviceUnknown : session.userAgent
-    return `${agent} — ${formatDesktopMessage(locale.messages.pairedDevicePaired, { date: paired })}`
-  }
-  const revokeBrowserSession = async (session: DesktopBrowserSession): Promise<void> => {
-    const messages = currentDesktopLocale().messages
-    const confirmed = await ordinaryMessageBox({
-      type: 'warning',
-      message: messages.pairedDeviceRevokeTitle,
-      detail: describeBrowserSession(session),
-      buttons: [messages.pairedDeviceRevokeItem, locale.messages.cancel],
-      defaultId: 1,
-      cancelId: 1,
-      noLink: true,
-    })
-    if (confirmed.response !== 0) return
-    const host = backend.host
-    if (host === undefined) return
-    try {
-      await host.browserSessions('revoke', session.id)
-    } catch (error) {
-      console.error(error)
-    }
-  }
-  const rotatePairingCode = async (): Promise<void> => {
-    const host = backend.host
-    if (host === undefined) return
-    let rotated: { url?: string }
-    try {
-      rotated = await host.browserSessions('rotate')
-    } catch (error) {
-      console.error(error)
-      return
-    }
-    // Every copied link carries the code that was current when it was copied;
-    // adopting the replacement keeps Copy Web Link and the shell window on the
-    // code that pairs now.
-    if (rotated.url !== undefined) hostUrl = rotated.url
-  }
-  const showBrowserSessions = async (): Promise<void> => {
-    const host = backend.host
-    if (host === undefined) return
-    let sessions: readonly DesktopBrowserSession[]
-    try {
-      ({ sessions } = await host.browserSessions('list'))
-    } catch (error) {
-      console.error(error)
-      return
-    }
-    const messages = currentDesktopLocale().messages
-    const template: MenuItemConstructorOptions[] = [
-      { label: formatDesktopMessage(messages.pairedDeviceCount, { count: String(sessions.length) }), enabled: false },
-      { type: 'separator' },
-      ...sessions.map(session => ({
-        label: describeBrowserSession(session),
-        submenu: [{
-          label: messages.pairedDeviceRevokeItem,
-          click: () => { void revokeBrowserSession(session) },
-        }],
-      })),
-      { type: 'separator' },
-      { label: messages.pairedDeviceRotateItem, click: () => { void rotatePairingCode() } },
-    ]
-    const popupWindow = currentMainWindow()
-    if (popupWindow === undefined) return
-    Menu.buildFromTemplate(template).popup({ window: popupWindow })
-  }
 
   const updateErrors = new WeakMap<DesktopUpdateState, Promise<void>>()
   const showUpdateFailure = (state: DesktopUpdateState): Promise<void> => {
@@ -655,7 +582,7 @@ async function main(): Promise<void> {
         startup = hostReady
         const recovery = hostReady.then(async () => {
           if (quitting) return
-          // A replacement Host can have a new port, cookie, or boot injections even at the same URL.
+          // A replacement Host can have a new port or boot injections even at the same URL.
           navigation = undefined
           await navigateMain(applicationUrl)
           if (backend.host !== undefined) updateJournal?.action('workspace-ready')
@@ -789,10 +716,10 @@ async function main(): Promise<void> {
         || ['/favicon.svg', '/manifest.webmanifest'].includes(url.pathname)) {
         return serveWebDocument(request, join(resources.dsh, 'node_modules', '@deepseek-ai', 'dsh-web-frontend', 'dist'))
       }
-      if (backend.host === undefined || hostUrl === undefined || hostCookie === undefined) {
+      if (backend.host === undefined || hostUrl === undefined) {
         return Promise.resolve(new Response(null, { status: 503 }))
       }
-      return forwardWebRequest(request, hostUrl, hostCookie)
+      return forwardWebRequest(request, hostUrl)
     }
     return Promise.resolve(new Response(null, { status: 404 }))
   })
@@ -829,7 +756,7 @@ async function main(): Promise<void> {
   })
 
   session.defaultSession.webRequest.onBeforeSendHeaders({ urls: ['ws://127.0.0.1/*', 'wss://127.0.0.1/*'] }, (details, callback) => {
-    if (hostUrl === undefined || hostCookie === undefined || details.webContentsId !== mainWindow?.webContents.id) {
+    if (hostUrl === undefined || details.webContentsId !== mainWindow?.webContents.id) {
       callback({})
       return
     }
@@ -838,7 +765,7 @@ async function main(): Promise<void> {
     if (requested.host !== target.host || requested.protocol !== (target.protocol === 'https:' ? 'wss:' : 'ws:')) { callback({}); return }
     const headers = Object.fromEntries(Object.entries(details.requestHeaders).map(([name, value]) => [name.toLowerCase(), value]))
     if (headers.origin !== 'dsh-app://app') { callback({ cancel: true }); return }
-    callback({ requestHeaders: { ...headers, origin: target.origin, cookie: hostCookie, 'sec-fetch-site': 'same-origin' } })
+    callback({ requestHeaders: { ...headers, origin: target.origin, 'sec-fetch-site': 'same-origin' } })
   })
 
   const assertMainApplication = (event: IpcMainInvokeEvent): BrowserWindow => {
@@ -1084,12 +1011,9 @@ async function main(): Promise<void> {
     ...portable === undefined
       ? [{ label: currentDesktopLocale().messages.checkUpdatesMenu, click: () => { void openUpdatePrompt(true) } }] : [],
     { label: currentDesktopLocale().messages.copyWebLinkMenu, click: () => {
-      // The URL carries the pairing code; pasting it into a browser pairs that
-      // browser, so the user owns where it goes.
+      // Anyone who can reach the Host URL can use this session, so the user
+      // owns where the link goes.
       if (hostUrl !== undefined) void clipboard.writeText(hostUrl)
-    } },
-    { label: currentDesktopLocale().messages.pairedDevicesMenu, click: () => {
-      void showBrowserSessions().catch((error: unknown) => { console.error(error) })
     } },
     // The `dsh` command and its PATH entry belong to the installed dsh; a portable
     // copy never offers to replace them.

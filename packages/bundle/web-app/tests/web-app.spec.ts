@@ -72,14 +72,6 @@ function fakeHttpServer(host = '127.0.0.1'): { server: WebServer } {
 /** Deterministic Host Connection face for URL publication and frontend injection. */
 function provideConnection(ctx: Context): void {
   ctx.provide('connection', {
-    // Adds the process token to the given canonical root, preserving any
-    // public mount prefix the caller passed.
-    authenticatedUrl(baseUrl: string) {
-      const url = new URL(baseUrl)
-      url.searchParams.set('token', 'test-token')
-      return url.href
-    },
-    authorizeIndex: () => Promise.resolve(true),
     requestRejection: () => undefined,
     rpc: {},
   } as never)
@@ -128,13 +120,13 @@ describe('web-app runtime glue', () => {
     apply(ctx, new Config({ openBrowser: true, printUrl: true, surfaceContext: true }))
     await vi.waitFor(() => { expect(openBrowser).toHaveBeenCalled() })
 
-    expect(log).toHaveBeenCalledWith('dsh web: http://127.0.0.1:4567/?token=test-token')
+    expect(log).toHaveBeenCalledWith('dsh web: http://127.0.0.1:4567')
     expect(log).toHaveBeenCalledWith('dsh web: opening the default browser; pass --no-open to disable')
-    expect(openBrowser).toHaveBeenCalledWith('http://127.0.0.1:4567/?token=test-token')
+    expect(openBrowser).toHaveBeenCalledWith('http://127.0.0.1:4567')
     expect(lifecycle).toEqual([
-      'dsh web: http://127.0.0.1:4567/?token=test-token',
+      'dsh web: http://127.0.0.1:4567',
       'dsh web: opening the default browser; pass --no-open to disable',
-      'open:http://127.0.0.1:4567/?token=test-token',
+      'open:http://127.0.0.1:4567',
     ])
     const webRuntime = contributions.find(contribution => contribution.name === 'web-runtime')
     expect(webRuntime?.resolve()).toEqual({ DSH_WEB_URL: 'http://127.0.0.1:4567' })
@@ -169,9 +161,9 @@ describe('web-app runtime glue', () => {
     await vi.waitFor(() => { expect(openBrowser).toHaveBeenCalled() })
 
     expect(lifecycle).toEqual([
-      'dsh web: https://proxy.example:8443/web/?token=test-token',
+      'dsh web: https://proxy.example:8443/web/',
       'dsh web: opening the default browser; pass --no-open to disable',
-      'open:https://proxy.example:8443/web/?token=test-token',
+      'open:https://proxy.example:8443/web/',
     ])
     const urlContribution = contributions.find(contribution => contribution.name === 'web-runtime')
     expect(urlContribution?.resolve()).toEqual({ DSH_WEB_URL: 'https://proxy.example:8443/web/' })
@@ -230,7 +222,7 @@ describe('web-app runtime glue', () => {
     const openBrowser = vi.fn(async () => {})
     internals.openBrowser = openBrowser
     apply(ctx, new Config({ openBrowser: false, printUrl: true, surfaceContext: true }))
-    await vi.waitFor(() => { expect(log).toHaveBeenCalledWith(`dsh web: http://${printed}:4567/?token=test-token`) })
+    await vi.waitFor(() => { expect(log).toHaveBeenCalledWith(`dsh web: http://${printed}:4567`) })
     expect(warn).not.toHaveBeenCalled()
     expect(openBrowser).not.toHaveBeenCalled()
   })
@@ -259,8 +251,8 @@ describe('web-app runtime glue', () => {
     expect(warn).toHaveBeenCalledWith(
       `dsh web: listening on ${bind} over plain HTTP; restrict this port to a trusted proxy or network`,
     )
-    expect(log).toHaveBeenCalledWith(`dsh web: http://${printed}:4567/?token=test-token`)
-    expect(openBrowser).toHaveBeenCalledWith(`http://${printed}:4567/?token=test-token`)
+    expect(log).toHaveBeenCalledWith(`dsh web: http://${printed}:4567`)
+    expect(openBrowser).toHaveBeenCalledWith(`http://${printed}:4567`)
   })
 
 
@@ -277,7 +269,7 @@ describe('web-app runtime glue', () => {
     apply(ctx, new Config({ openBrowser: false, printUrl: true, surfaceContext: false }))
     await vi.waitFor(() => { expect(log).toHaveBeenCalled() })
 
-    expect(log).toHaveBeenCalledWith('dsh web: http://[::1]:4567/?token=test-token')
+    expect(log).toHaveBeenCalledWith('dsh web: http://[::1]:4567')
   })
 
   it.each(['fe80::1%lo', '::127.0.0.1%lo'])('refuses its own activation when %s carries an interface zone id', async (bind) => {
@@ -302,7 +294,7 @@ describe('web-app runtime glue', () => {
       openBrowser: false, printUrl: true, surfaceContext: false, publicUrl: 'https://app.example/ui/',
     }))
     await vi.waitFor(() => { expect(log).toHaveBeenCalled() })
-    expect(log).toHaveBeenCalledWith('dsh web: https://app.example/ui/?token=test-token')
+    expect(log).toHaveBeenCalledWith('dsh web: https://app.example/ui/')
   })
 
 
@@ -332,7 +324,7 @@ describe('web-app runtime glue', () => {
     provideConnection(ctx)
     const log = vi.spyOn(console, 'log').mockImplementation(() => {})
     apply(ctx, new Config({ openBrowser: false, printUrl: true, surfaceContext: false, publicUrl: null as never }))
-    await vi.waitFor(() => { expect(log).toHaveBeenCalledWith('dsh web: http://127.0.0.1:4567/?token=test-token') })
+    await vi.waitFor(() => { expect(log).toHaveBeenCalledWith('dsh web: http://127.0.0.1:4567') })
   })
 
   it.each([
@@ -349,7 +341,7 @@ describe('web-app runtime glue', () => {
     internals.openBrowser = openBrowser
     apply(ctx, new Config({ openBrowser: true, printUrl: true, surfaceContext: false }))
     await new Promise(resolve => setTimeout(resolve, 0))
-    expect(log).toHaveBeenCalledWith('dsh web: http://127.0.0.1:4567/?token=test-token')
+    expect(log).toHaveBeenCalledWith('dsh web: http://127.0.0.1:4567')
     expect(openBrowser).not.toHaveBeenCalled()
     await ctx.fiber.dispose()
   })
@@ -373,8 +365,8 @@ describe('web-app runtime glue', () => {
     expect(openBrowser).not.toHaveBeenCalled()
     release!()
     await new Promise(resolve => setTimeout(resolve, 0))
-    expect(log).toHaveBeenCalledWith('dsh web: http://127.0.0.1:4567/?token=test-token')
-    expect(openBrowser).toHaveBeenCalledWith('http://127.0.0.1:4567/?token=test-token')
+    expect(log).toHaveBeenCalledWith('dsh web: http://127.0.0.1:4567')
+    expect(openBrowser).toHaveBeenCalledWith('http://127.0.0.1:4567')
     await settled.fiber.dispose()
 
     // Failed path: Loader reports the sibling failure; the app prints no URL
@@ -439,8 +431,8 @@ describe('web-app runtime glue', () => {
     await vi.waitFor(() => { expect(audit).toHaveBeenCalledOnce() })
     await Promise.allSettled(audit.mock.results.map(result => result.value as Promise<void>))
     if (announces) {
-      expect(log).toHaveBeenCalledWith('dsh web: http://127.0.0.1:4567/?token=test-token')
-      expect(openBrowser).toHaveBeenCalledWith('http://127.0.0.1:4567/?token=test-token')
+      expect(log).toHaveBeenCalledWith('dsh web: http://127.0.0.1:4567')
+      expect(openBrowser).toHaveBeenCalledWith('http://127.0.0.1:4567')
     } else {
       expect(log).not.toHaveBeenCalled()
       expect(openBrowser).not.toHaveBeenCalled()

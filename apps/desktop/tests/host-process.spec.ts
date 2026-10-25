@@ -27,7 +27,7 @@ const server = createServer((request, response) => {
   response.end(JSON.stringify({runtime: process.argv[2], profile: process.argv[3], cwd: process.cwd(), nodePath: process.env.NODE_PATH, registry: process.env.NPM_CONFIG_REGISTRY, nodeOptions: process.env.NODE_OPTIONS, runAsNode: process.env.ELECTRON_RUN_AS_NODE, internals: process.execArgv.includes('--expose-internals')}))
 })
 server.listen(0, '127.0.0.1', () => {
-  process.send({ type: 'ready', url: 'http://127.0.0.1:' + server.address().port + '/?token=fixture' })
+  process.send({ type: 'ready', url: 'http://127.0.0.1:' + server.address().port + '/' })
 })
 process.on('message', message => {
   if (message.type === 'file-drag-cancel') {
@@ -53,15 +53,6 @@ process.on('message', message => {
     // Ids divisible by three never answer; the others report scheduled work for odd ids.
     if (message.requestId % 3 === 0) return
     process.send({ type: 'quit-inspection', requestId: message.requestId, activeTasks: false, scheduledTasks: message.requestId % 2 === 1 })
-    return
-  }
-  if (message.type === 'browser-sessions') {
-    const sessions = [{ id: 'phone', userAgent: 'Phone/1.0', pairedAt: 1, lastSeenAt: 2, expiresAt: 3 }]
-    // One device id never answers, standing in for a Host that stops responding.
-    if (message.action === 'revoke' && message.deviceId === 'silent') return
-    process.send({ type: 'browser-sessions', requestId: message.requestId, sessions,
-      ...message.action === 'revoke' && message.deviceId === 'phone' ? { sessions: [] }
-        : message.action === 'rotate' ? { url: 'http://127.0.0.1:3080/?token=rotated' } : {} })
     return
   }
   if (message.type !== 'shutdown') return
@@ -146,43 +137,6 @@ describe('desktop host process', () => {
     expect(await host.inspectQuit()).toEqual({ activeTasks: false, scheduledTasks: false })
   }, 15_000)
 
-  it('correlates paired-browser listings, revocations, and code rotation over private IPC', async () => {
-    const host = hostProcess(projectWithHost())
-    await expect(host.browserSessions('list')).rejects.toThrow('desktop pairing: Host is unavailable')
-    await host.start()
-    expect(await host.browserSessions('list')).toEqual({
-      sessions: [{ id: 'phone', userAgent: 'Phone/1.0', pairedAt: 1, lastSeenAt: 2, expiresAt: 3 }],
-    })
-    expect(await host.browserSessions('revoke', 'phone')).toEqual({ sessions: [] })
-    expect(await host.browserSessions('revoke', 'laptop')).toEqual({
-      sessions: [{ id: 'phone', userAgent: 'Phone/1.0', pairedAt: 1, lastSeenAt: 2, expiresAt: 3 }],
-    })
-    expect(await host.browserSessions('rotate')).toEqual({
-      sessions: [{ id: 'phone', userAgent: 'Phone/1.0', pairedAt: 1, lastSeenAt: 2, expiresAt: 3 }],
-      url: 'http://127.0.0.1:3080/?token=rotated',
-    })
-    // An unanswered revocation fails at this control kind's own deadline.
-    const started = Date.now()
-    await expect(host.browserSessions('revoke', 'silent')).rejects.toThrow('desktop pairing: session inspection timed out')
-    expect(Date.now() - started).toBeGreaterThanOrEqual(9_000)
-    await host.stop(true)
-  }, 30_000)
-
-  it('refuses an invalid paired-browser answer and fails the Host rather than trusting it', async () => {
-    const onFailure = vi.fn()
-    const host = hostProcess(projectWithHost(`
-      process.send({ type: 'ready', url: 'http://127.0.0.1:3080/' })
-      process.on('message', message => {
-        if (message.type === 'browser-sessions') {
-          process.send({ type: 'browser-sessions', requestId: message.requestId, sessions: [{ id: 42 }] })
-        }
-      })
-    `), undefined, onFailure)
-    await host.start()
-    await expect(host.browserSessions('list')).rejects.toThrow('invalid IPC event')
-    expect(onFailure).toHaveBeenCalled()
-  })
-
   it.each([
     'process.exit(17)',
     'process.exit(0)',
@@ -202,12 +156,13 @@ describe('desktop host process', () => {
     await expect(host.stop()).resolves.toBeUndefined()
   })
 
-  it('returns the Web authentication URL and waits for graceful shutdown', async () => {
+  it('returns the Web URL and waits for graceful shutdown', async () => {
     const runtime = projectWithHost()
     const failure = vi.fn()
     const host = hostProcess(runtime, runtime, failure)
     const ready = await host.start()
-    expect(new URL(ready.url).searchParams.get('token')).toBe('fixture')
+    const url = new URL(ready.url)
+    expect({ host: url.hostname, pathname: url.pathname, search: url.search }).toEqual({ host: '127.0.0.1', pathname: '/', search: '' })
     expect(await host.start()).toEqual(ready)
     expect((await fetch(ready.url)).status).toBe(200)
     await host.stop()

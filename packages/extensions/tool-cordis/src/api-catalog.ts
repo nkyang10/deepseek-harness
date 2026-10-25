@@ -799,7 +799,7 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
       },
       {
         signature: 'readonly browserPeer: PeerScope',
-        description: 'The owner Peer every authenticated browser connection shares.',
+        description: 'The owner Peer every browser connection shares.',
         parameters: [],
       },
       {
@@ -811,59 +811,25 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         signature: 'createSharedFetchHandler(channel: \'/api\'): ConnectionFetchHandler',
         description: 'Compose exact Fetch routes and the shared-channel RPC interceptor.',
         parameters: [{ name: 'channel', description: 'shared channel mounted by Connection.' }],
-        returns: 'Fetch handler for trusted, authenticated requests.',
+        returns: 'Fetch handler for requests that pass the trust fence.',
       },
       {
         signature: 'requestRejection(request: ConnectionTrustRequest): ConnectionRequestRejection',
-        description: 'Apply Connection\'s Host/Origin checks and browser authentication to another Web route.',
+        description: 'Apply Connection\'s Host/Origin checks to another Web route.',
         parameters: [{ name: 'request', description: 'request headers from the HTTP or upgrade request.' }],
         returns: 'rejection status, or undefined when the route may accept the request.',
       },
       {
         signature: 'admit(request: ConnectionTrustRequest): PeerAdmission',
-        description: 'Admit an HTTP request against its signed browser or API credential and live Peer.',
+        description: 'Admit an HTTP request through the Host/Origin trust fence.',
         parameters: [{ name: 'request', description: 'request headers from the HTTP or upgrade request.' }],
-        returns: 'the credential\'s Peer, or the rejection status.',
+        returns: 'the shared browser Peer, or the rejection status.',
       },
       {
-        signature: 'createPeer(options: { readonly principal: Principal; readonly interactions?: \'answer\' | \'none\' }): PeerScope',
-        description: '/** Create an independent in-process Peer, disposed with the Context that read `ctx.connection`.',
+        signature: 'createPeer(options: { readonly principal: Principal; readonly interactions?: ConnectionInteractions }): PeerScope',
+        description: 'Create an independent in-process Peer, disposed with the Context that read `ctx.connection`.',
         parameters: [{ name: 'options', description: 'fixed principal and optional interaction participation (default `answer`).' }],
         returns: 'a new Peer distinct from every other Peer.',
-      },
-      {
-        signature: 'admitConnection(request: ConnectionTrustRequest): ConnectionAdmission',
-        description: 'Claim a physical socket for an API Peer; browser sockets share their owner Peer.',
-        parameters: [{ name: 'request', description: 'authenticated upgrade request headers.' }],
-        returns: 'the Peer and idempotent release, or 409 for duplicate API ownership. The carrier releases on socket termination or failed upgrade; release removes API admission synchronously without cancelling independent HTTP calls.',
-      },
-      {
-        signature: 'authorizeIndex(request: ConnectionIndexRequest, response: ConnectionIndexResponse): Promise<boolean>',
-        description: 'Authenticate one frontend index request, owning a pairing redirect or 401. The cookie this mints is `Secure` when the mounted Web carrier serves TLS, which only that listener\'s protocol decides.',
-        parameters: [{ name: 'request', description: 'root or configured-index HTTP request.' }, { name: 'response', description: 'response owned when the result is false.' }],
-        returns: 'true only when the frontend may serve index.html.',
-      },
-      {
-        signature: 'authenticatedUrl(baseUrl: string): string',
-        description: 'Add the deployment\'s durable pairing code to an ordinary Web application URL. Whoever opens the result pairs a new browser session.',
-        parameters: [{ name: 'baseUrl', description: 'clean application URL whose authority and mount are preserved.' }],
-        returns: 'pairing URL for a new browser; a mount proxy strips its prefix before {@link authorizeIndex}.',
-      },
-      {
-        signature: 'listBrowserSessions(): Promise<readonly BrowserSession[]>',
-        description: 'List the browsers currently paired with this deployment, newest pairing last, after writing back the last-seen times collected while answering requests and dropping sessions whose lifetime has passed.',
-        parameters: [],
-        returns: 'the live sessions.',
-      },
-      {
-        signature: 'revokeBrowserSession(id: BrowserDeviceId): Promise<void>',
-        description: 'End one paired browser\'s access. Every cookie naming that session stops verifying at once; other sessions and the pairing code are untouched.',
-        parameters: [{ name: 'id', description: 'the session to revoke.' }],
-      },
-      {
-        signature: 'rotatePairingCode(): Promise<void>',
-        description: 'Replace the pairing code, so previously shared links no longer pair new browsers while already paired browsers keep their sessions.',
-        parameters: [],
       },
     ],
   },
@@ -4428,9 +4394,9 @@ export const EVENT_API: readonly EventApiEntry[] = [
     name: 'connection/request',
     mode: 'waterfall',
     signature: '\'connection/request\'(request: IncomingMessage, response: ServerResponse, next: () => Promise<void>): Promise<void>',
-    summary: 'Admit or wrap an authenticated shared API request, including body transfer.',
-    description: 'Admit or wrap an authenticated shared API request, including body transfer. Existing requests continue when a listener refuses subsequent requests.',
-    parameters: [{ name: 'request', description: 'Authenticated incoming HTTP request.' }, { name: 'response', description: 'Response owned until the delegated bridge settles.' }, { name: 'next', description: 'Delegate to the next listener or the shared API bridge.' }],
+    summary: 'Admit or wrap an admitted shared API request, including body transfer.',
+    description: 'Admit or wrap an admitted shared API request, including body transfer. Existing requests continue when a listener refuses subsequent requests.',
+    parameters: [{ name: 'request', description: 'Incoming HTTP request that passed the trust fence.' }, { name: 'response', description: 'Response owned until the delegated bridge settles.' }, { name: 'next', description: 'Delegate to the next listener or the shared API bridge.' }],
   },
   {
     name: 'cordis/dynamic-package',
@@ -5261,14 +5227,6 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export type BrandedNumber<B extends string> = number & {\n    readonly [BRAND]: B;\n};',
   },
   {
-    name: 'BrowserDeviceId',
-    declaration: 'export type BrowserDeviceId = Branded<\'browser-device-id\'>;',
-  },
-  {
-    name: 'BrowserSession',
-    declaration: 'export interface BrowserSession {\n    readonly id: BrowserDeviceId;\n    readonly userAgent: string;\n    readonly pairedAt: number;\n    readonly lastSeenAt: number;\n    readonly expiresAt: number;\n}',
-  },
-  {
     name: 'BrowserUseProviderName',
     declaration: 'export type BrowserUseProviderName = Branded<\'BrowserUseProviderName\'>;',
   },
@@ -5393,10 +5351,6 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export type ConfinedSandboxMode = Exclude<SandboxMode, \'danger-full-access\'>;',
   },
   {
-    name: 'ConnectionAdmission',
-    declaration: 'export type ConnectionAdmission = {\n    readonly peer: PeerScope;\n    readonly release: () => Promise<void>;\n} | {\n    readonly rejection: 401 | 403 | 409;\n};',
-  },
-  {
     name: 'ConnectionFetchHandler',
     declaration: 'export interface ConnectionFetchHandler {\n    requestBodyMode(request: {\n        readonly method: string;\n        readonly url: URL;\n    }): ConnectionRequestBodyMode;\n    fetch(request: Request, peer: PeerScope): Promise<Response>;\n}',
   },
@@ -5409,12 +5363,8 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface ConnectionFetchRoute {\n    readonly path: string;\n    readonly methods: readonly ConnectionFetchMethod[];\n    readonly requestBody: ConnectionRequestBodyMode;\n    readonly fetch: (request: Request) => Promise<Response>;\n}',
   },
   {
-    name: 'ConnectionIndexRequest',
-    declaration: 'export interface ConnectionIndexRequest extends ConnectionTrustRequest {\n    readonly method?: string | undefined;\n    readonly url?: string | undefined;\n}',
-  },
-  {
-    name: 'ConnectionIndexResponse',
-    declaration: 'export interface ConnectionIndexResponse {\n    writeHead(status: number, headers?: Readonly<Record<string, string>>): unknown;\n    end(body?: string): unknown;\n}',
+    name: 'ConnectionInteractions',
+    declaration: 'export type ConnectionInteractions = \'answer\' | \'none\';',
   },
   {
     name: 'ConnectionRequestBodyMode',

@@ -1,4 +1,4 @@
-# Agent Note: Share Host preferences with every authenticated browser
+# Agent Note: Share Host preferences with every admitted browser
 
 Status: implemented
 
@@ -10,17 +10,17 @@ English | [中文](2026-09-15-authenticated-browser-host-preferences.zh.md)
 
 ## Decision
 
-Locality selects nothing. One `settings.describe` mirror, one `ctx.configForms.get(entryId)` per namespace derived from it, and the `settings.mutate` write path serve every authenticated browser. Browser token authentication of the Connection API is the identity boundary; the fixed `remote.$host` locality facts are request-routing evidence that no store selector consults. The mirror's state space is `idle`, `loading`, and `ready`, a form snapshot carries no mode, and a form reports `unavailable` only for a namespace the Host did not register.
+Locality selects nothing. One `settings.describe` mirror, one `ctx.configForms.get(entryId)` per namespace derived from it, and the `settings.mutate` write path serve every admitted browser. Admission at the Host/Origin fence is the identity boundary: every admitted browser is the owner ([decision](../architecture/2026-10-25-web-reachability-is-authority.md)); the fixed `remote.$host` locality facts are request-routing evidence that no store selector consults. The mirror's state space is `idle`, `loading`, and `ready`, a form snapshot carries no mode, and a form reports `unavailable` only for a namespace the Host did not register.
 
-The settings shell keeps one locality-dependent UI element: it builds its document controller from `ctx.remote.$host.isLoopback`, so only a loopback page renders **Open configuration file** and issues the `hasDocument` read behind it. The `settings/openSettingsDocument` Remote itself stays browser-authenticated like every other Host method; the omission is a presentation choice for pages that cannot see the Host's native editor, not a persistence rule.
+The settings shell keeps one locality-dependent UI element: it builds its document controller from `ctx.remote.$host.isLoopback`, so only a loopback page renders **Open configuration file** and issues the `hasDocument` read behind it. The `settings/openSettingsDocument` Remote itself stays behind the same fence as every other Host method; the omission is a presentation choice for pages that cannot see the Host's native editor, not a persistence rule.
 
 ## Alternatives considered
 
-**Keep the memory-branch locality gate.** Rejected: browser token authentication already covers every Host method for remote pages, so the gate protected nothing, and locality is request-routing evidence rather than identity. It also made every Host-backed row inert on trusted remote and public deployments.
+**Keep the memory-branch locality gate.** Rejected: fence admission already covers every Host method for remote pages, so the gate protected nothing, and locality is request-routing evidence rather than identity. It also made every Host-backed row inert on trusted remote and public deployments.
 
 ## Consequences
 
-Every authenticated browser reaching one Host shares one preference document. Two browsers on the same deployment observe each other's Appearance, Language, busy-Enter, and welcome-acknowledgement choices, and a value written remotely is the value a loopback browser loads next. Preference access is governed by API authentication and `settings.describe.writable`.
+Every admitted browser reaching one Host shares one preference document. Two browsers on the same deployment observe each other's Appearance, Language, busy-Enter, and welcome-acknowledgement choices, and a value written remotely is the value a loopback browser loads next. Preference access is governed by fence admission and `settings.describe.writable`.
 
 A remote page omits the **Open configuration file** action, the one locality-dependent UI element that remains. Concurrent writers on one document resolve through the namespace revision each form sends as `expectedRevision`.
 

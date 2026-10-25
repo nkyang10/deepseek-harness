@@ -1,6 +1,7 @@
 # Agent Note: 以 Peer 为作用域的建连握手
 
 Status: implemented
+Archived: 2026-10-25
 
 [English](2026-10-09-operator-scoped-connect-handshake.md) | 中文
 

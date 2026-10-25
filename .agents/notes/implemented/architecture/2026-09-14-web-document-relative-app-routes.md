@@ -6,7 +6,7 @@ English | [中文](2026-09-14-web-document-relative-app-routes.zh.md)
 
 ## Problem
 
-Every browser reference to a shell-owned route was origin-root absolute: `/api/...` RPC, `/plugins/??...` plugin bundles, the Remote stream mux, the HMR event stream, and the launch entry's token-cleanup redirect to `/`. One listener served behind a prefix-stripping proxy (a mount such as `https://host/tools/dsh/` that forwards `/tools/dsh/...` as `/...`) therefore saw those requests at the origin root, where no route answers them: the shell, its plugin bundles, and its streams all missed. A single bundle has to serve both the origin root and any mount without a second build.
+Every browser reference to a shell-owned route was origin-root absolute: `/api/...` RPC, `/plugins/??...` plugin bundles, the Remote stream mux, and the HMR event stream. One listener served behind a prefix-stripping proxy (a mount such as `https://host/tools/dsh/` that forwards `/tools/dsh/...` as `/...`) therefore saw those requests at the origin root, where no route answers them: the shell, its plugin bundles, and its streams all missed. A single bundle has to serve both the origin root and any mount without a second build.
 
 The mount cannot be recovered from the transport. A configured base URL makes it deployment input, forwarded-prefix inference makes a request header authoritative for routing, and response rewriting in the proxy reimplements the same fact in fragments. The one place that already knows the mount is the served document itself.
 
@@ -18,7 +18,7 @@ Browser references to those routes are relative to that document — `api/x`, `p
 
 The Host composes browser references in one place per producer. Module graph rows and batch descriptors carry the document-relative combo reference; the source-map trailer carries the combo query alone, because a script's source-map reference resolves against that script's own directory (`.../plugins/`) rather than the document. The response table stays keyed by the absolute route, which is also what a request reaches after the proxy strips its prefix.
 
-The launch entry follows the same rule. `authenticatedUrl` adds the process token to the caller's URL and keeps its authority and mount, and the token exchange redirects to `./`, which removes the query token while preserving the request URL's directory. The Host/Origin fence and the cookie rules are unchanged.
+The launch entry follows the same rule. The printed or opened URL keeps the listener's authority and mount, and the app's first document is served from that directory. The Host/Origin fence is unchanged.
 
 Consumers that need an absolute URL resolve against `document.baseURI`: the Gateway when it constructs its WebSocket URL and selects `ws:` or `wss:`, and the Inspector when it locates its own bundle from the boot graph.
 
@@ -42,6 +42,6 @@ Routes owned by feature packages (open-in-app, deliverables, session-log export,
 
 ## Testing
 
-The frontend-static real-composition test serves the index through the Loader and asserts one `<base href="./">` that precedes an injected plugin-resource row and tap markup. The client-modules node-half suite asserts that graph rows, batch descriptors, and the source-map trailer are document-relative while the response table still serves them by route, and the client test roster plus the assembled-boot fixture carry the same relative form. `browser-auth.host.spec.ts` covers the `./` redirect and the authority- and mount-preserving `authenticatedUrl`; `frontend-static.spec.ts` and `apps/cli/tests/web-auth.e2e.ts` run the exchange through a real Loader composition and the built CLI.
+The frontend-static real-composition test serves the index through the Loader and asserts one `<base href="./">` that precedes an injected plugin-resource row and tap markup. The client-modules node-half suite asserts that graph rows, batch descriptors, and the source-map trailer are document-relative while the response table still serves them by route, and the client test roster plus the assembled-boot fixture carry the same relative form. `apps/cli/tests/web-access.e2e.ts` boots the shell through the built CLI.
 
 `apps/web/tests/public-mount.e2e.ts` is the browser proof: a real Chromium reaches one listener through the prefix-stripping proxy, the mounted WebSocket streams both ways, a `pushState` to a deeper path leaves `document.baseURI` at the mount, and a document-relative `fetch('api/session/create')` still succeeds beneath it.

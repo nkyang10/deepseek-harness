@@ -220,11 +220,12 @@ export function normalizeBindAddress(host: string): string {
 }
 
 /**
- * The URL host form of a bind address. Loopback addresses use their canonical
- * text, so browsers treat them as local, trustworthy origins: a mapped literal
- * such as `::ffff:127.0.0.1` reads as `127.0.0.1`, and `::0.0.0.1` reads as
- * `::1`. A redundant loopback zone is dropped; other addresses keep their text,
- * and IPv6 text is bracketed.
+ * The URL host form of a bind address. Address literals use their canonical
+ * text: a mapped literal such as `::ffff:127.0.0.1` reads as `127.0.0.1`,
+ * `::0.0.0.1` reads as `::1`, and `::127.0.0.1` reads as `::7f00:1`, so loopback
+ * addresses stay browsers' local, trustworthy origins and a dotted-quad tail
+ * never advertises an address other than the one it names. A redundant loopback
+ * zone is dropped; non-address text keeps its text, and IPv6 text is bracketed.
  * @param host - concrete IPv4 or IPv6 bind literal.
  * @returns the URL host, or `undefined` when a non-loopback interface zone id makes the address inexpressible in a URL.
  */
@@ -232,7 +233,7 @@ export function bindUrlHost(host: string): string | undefined {
   const zoneAt = host.indexOf('%')
   const bare = zoneAt === -1 ? host : host.slice(0, zoneAt)
   if (!isLoopbackHost(bare) && zoneAt !== -1) return undefined
-  const text = isLoopbackHost(bare) ? normalizeBindAddress(bare) : host
+  const text = isLoopbackHost(bare) || isIP(bare) === 6 ? normalizeBindAddress(bare) : host
   return isIP(text) === 6 ? `[${text}]` : text
 }
 

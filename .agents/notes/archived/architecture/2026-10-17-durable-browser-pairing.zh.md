@@ -1,6 +1,7 @@
 # Agent Note：持久的浏览器配对与可撤销会话
 
 Status: implemented
+Archived: 2026-10-25
 
 [English](2026-10-17-durable-browser-pairing.md) | 中文
 

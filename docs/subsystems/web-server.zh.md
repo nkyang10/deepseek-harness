@@ -44,7 +44,7 @@ interface WebResourceRoute {
 }
 ```
 
-匹配顺序固定：先查 exact 表，再取最长匹配前缀，最后落到已注册的回退。注册顺序不携带任何面向请求的语义：具名路由在组合上互不相交，任何未被具名路由认领的请求都由回退席位应答；席位只有一个所有者，第二次注册会抛出异常。发布的 Web 组合用 [`dsh-host-frontend-static`](../../packages/host/frontend-static/src/index.ts) 认领席位，即遵循固定语义的 SPA dist 服务器：Connection 在读取 dist 根目录和配置 index 的 HTML 前完成认证；非 index 资产保持公开；非 GET/HEAD 返回 405，越出 dist 根目录的遍历返回 403，现有文件直接提供，缺失或不是文件的目标返回空的 404，未知扩展名按 octet-stream 发送。
+匹配顺序固定：先查 exact 表，再取最长匹配前缀，最后落到已注册的回退。注册顺序不携带任何面向请求的语义：具名路由在组合上互不相交，任何未被具名路由认领的请求都由回退席位应答；席位只有一个所有者，第二次注册会抛出异常。发布的 Web 组合用 [`dsh-host-frontend-static`](../../packages/host/frontend-static/src/index.ts) 认领席位，即遵循固定语义的 SPA dist 服务器：每个请求都面向到达监听器的调用者提供服务，index 请求为 owner 的共享 browser Peer 渲染；非 GET/HEAD 返回 405，越出 dist 根目录的遍历返回 403，现有文件直接提供，缺失或不是文件的目标返回空的 404，未知扩展名按 octet-stream 发送。
 
 路由或回退可以用 resource——一个把 Fetch `Request` 映射为 `Response` 的函数——代替 handler。HTTP 的 `GET`、`HEAD` 请求不带 Peer 到达它，`readResource(request, peer)` 则在进程内按调用方准入的 Peer 读取它；读取遵循同样的匹配顺序但只到达 resource，因此返回 owner 私有数据或会执行操作的路由即使应答 `GET` 也保持为 handler。
 
@@ -99,7 +99,7 @@ interface TlsConfig {
 }
 ```
 
-没有组合能一次性绑定所有网络接口：未指定地址在加载时即被拒绝。导出的 `isWildcardHost` 与 `isLoopbackHost` 按解析后的地址值分类，IPv6 的 `%zone` 会保留给 `listen`，而分类只读取地址本身。载体不拥有认证或 Origin 策略，并且除非 `tls` 提供证书与密钥，否则以明文 HTTP 提供服务。`compression` 默认为 `none`；随附的 Web 组合选择 gzip level 1 和 1024 字节阈值。随附的 `dsh web` 命令默认选择 loopback 并接受一个具体的 `--host` 地址，非 loopback 绑定以明文 HTTP 提供服务时会在启动时警告；其 Connection 插件为每个 Host API route 与 stream 提供 Host/Origin 校验和浏览器会话认证，绑定地址加 `--trusted-host` 决定接受哪个浏览器 Host；`--public-url` 只改变公告的 URL。其他组合自行拥有绑定与路由认证策略。dist 位置是认领席位的前端插件的组装事实。
+没有组合能一次性绑定所有网络接口：未指定地址在加载时即被拒绝。导出的 `isWildcardHost` 与 `isLoopbackHost` 按解析后的地址值分类，IPv6 的 `%zone` 会保留给 `listen`，而分类只读取地址本身。载体不拥有认证或 Origin 策略，并且除非 `tls` 提供证书与密钥，否则以明文 HTTP 提供服务。`compression` 默认为 `none`；随附的 Web 组合选择 gzip level 1 和 1024 字节阈值。随附的 `dsh web` 命令默认选择 loopback 并接受一个具体的 `--host` 地址，非 loopback 绑定以明文 HTTP 提供服务时会在启动时警告；其 Connection 插件为每个 Host API route 与 stream 提供 Host/Origin 校验与 owner Peer 准入，绑定地址加 `--trusted-host` 决定接受哪个浏览器 Host；`--public-url` 只改变公告的 URL。其他组合自行拥有绑定与路由认证策略。dist 位置是认领席位的前端插件的组装事实。
 
 ## 服务
 
@@ -125,80 +125,30 @@ Host `ctx.connection` members consumed by transport-independent adapters.
 /**
  * Compose exact Fetch routes and the shared-channel RPC interceptor.
  * @param channel - shared channel mounted by Connection.
- * @returns Fetch handler for trusted, authenticated requests.
+ * @returns Fetch handler for requests that pass the trust fence.
  */
 createSharedFetchHandler(channel: '/api'): ConnectionFetchHandler
 
 /**
- * Apply Connection's Host/Origin checks and browser authentication to
- * another Web route.
+ * Apply Connection's Host/Origin checks to another Web route.
  * @param request - request headers from the HTTP or upgrade request.
  * @returns rejection status, or undefined when the route may accept the request.
  */
 requestRejection(request: ConnectionTrustRequest): ConnectionRequestRejection
 
 /**
- * Admit an HTTP request against its signed browser or API credential and live Peer.
+ * Admit an HTTP request through the Host/Origin trust fence.
  * @param request - request headers from the HTTP or upgrade request.
- * @returns the credential's Peer, or the rejection status.
+ * @returns the shared browser Peer, or the rejection status.
  */
 admit(request: ConnectionTrustRequest): PeerAdmission
 
-/**
 /**
  * Create an independent in-process Peer, disposed with the Context that read `ctx.connection`.
  * @param options - fixed principal and optional interaction participation (default `answer`).
  * @returns a new Peer distinct from every other Peer.
  */
-createPeer(options: { readonly principal: Principal; readonly interactions?: 'answer' | 'none' }): PeerScope
-
-/**
- * Claim a physical socket for an API Peer; browser sockets share their owner Peer.
- * @param request - authenticated upgrade request headers.
- * @returns the Peer and idempotent release, or 409 for duplicate API ownership.
- * The carrier releases on socket termination or failed upgrade; release removes
- * API admission synchronously without cancelling independent HTTP calls.
- */
-admitConnection(request: ConnectionTrustRequest): ConnectionAdmission
-
-/**
- * Authenticate one frontend index request, owning a pairing redirect or 401.
- * The cookie this mints is `Secure` when the mounted Web carrier serves TLS,
- * which only that listener's protocol decides.
- * @param request - root or configured-index HTTP request.
- * @param response - response owned when the result is false.
- * @returns true only when the frontend may serve index.html.
- */
-authorizeIndex(request: ConnectionIndexRequest, response: ConnectionIndexResponse): Promise<boolean>
-
-/**
- * Add the deployment's durable pairing code to an ordinary Web application
- * URL. Whoever opens the result pairs a new browser session.
- * @param baseUrl - clean application URL whose authority and mount are preserved.
- * @returns pairing URL for a new browser; a mount proxy strips its prefix before {@link authorizeIndex}.
- */
-authenticatedUrl(baseUrl: string): string
-
-/**
- * List the browsers currently paired with this deployment, newest pairing
- * last, after writing back the last-seen times collected while answering
- * requests and dropping sessions whose lifetime has passed.
- * @returns the live sessions.
- */
-listBrowserSessions(): Promise<readonly BrowserSession[]>
-
-/**
- * End one paired browser's access. Every cookie naming that session stops
- * verifying at once; other sessions and the pairing code are untouched.
- * @param id - the session to revoke.
- */
-revokeBrowserSession(id: BrowserDeviceId): Promise<void>
-
-/**
- * Replace the pairing code, so previously shared links no longer pair new
- * browsers while already paired browsers keep their sessions.
- */
-rotatePairingCode(): Promise<void>
+createPeer(options: { readonly principal: Principal; readonly interactions?: ConnectionInteractions }): PeerScope
 ```
 
 Types: [Principal](typert.zh.md)
@@ -327,13 +277,13 @@ Source: [`packages/host/webserver/src/index.ts`](../../packages/host/webserver/s
 
 #### `connection/request` — waterfall
 
-Admit or wrap an authenticated shared API request, including body transfer. Existing requests continue when a listener refuses subsequent requests.
+Admit or wrap an admitted shared API request, including body transfer. Existing requests continue when a listener refuses subsequent requests.
 
 ```ts cordis-catalog
 /**
- * Admit or wrap an authenticated shared API request, including body transfer.
+ * Admit or wrap an admitted shared API request, including body transfer.
  * Existing requests continue when a listener refuses subsequent requests.
- * @param request - Authenticated incoming HTTP request.
+ * @param request - Incoming HTTP request that passed the trust fence.
  * @param response - Response owned until the delegated bridge settles.
  * @param next - Delegate to the next listener or the shared API bridge.
  * @mode waterfall

@@ -79,8 +79,6 @@ describe('web app browser startup', () => {
       __dshWebAppApply: typeof apply
       __dshWebServer: typeof WebServer
       __dshConnection: {
-        authenticatedUrl(baseUrl: string): string
-        authorizeIndex(): Promise<boolean>
         requestRejection(): undefined
         rpc: object
       }
@@ -88,12 +86,6 @@ describe('web app browser startup', () => {
     globals.__dshWebAppApply = apply
     globals.__dshWebServer = WebServer
     globals.__dshConnection = {
-      authenticatedUrl: (baseUrl) => {
-        const url = new URL(baseUrl)
-        url.searchParams.set('token', 'fixture-token')
-        return url.href
-      },
-      authorizeIndex: () => Promise.resolve(true),
       requestRejection: () => undefined,
       rpc: {},
     }
@@ -119,7 +111,7 @@ describe('web app browser startup', () => {
     await ctx.loader.await()
     await opened
 
-    expect(openedUrl).toBe(`http://127.0.0.1:${String(ctx.webServer.port)}/?token=fixture-token`)
+    expect(openedUrl).toBe(`http://127.0.0.1:${String(ctx.webServer.port)}`)
     expect(openedStatus).toBe(200)
   })
 })

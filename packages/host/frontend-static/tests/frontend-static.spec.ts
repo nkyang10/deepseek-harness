@@ -15,7 +15,6 @@ import { Context } from '@deepseek-ai/cordis'
 import Loader from '@deepseek-ai/cordis-plugin-loader'
 import Include from '@deepseek-ai/cordis-plugin-include'
 import * as Connection from '@deepseek-ai/dsh-client-connection'
-import LocalCredentials from '@deepseek-ai/dsh-credentials-local'
 import HttpServer from '@deepseek-ai/dsh-host-webserver'
 import * as FrontendStatic from '../src/index.ts'
 
@@ -29,7 +28,7 @@ afterEach(async () => {
   root = undefined
 })
 
-/** Write a dist fixture and the authenticated Web rows, then boot them through the real Loader. */
+/** Write a dist fixture and the Web rows, then boot them through the real Loader. */
 async function loadComposition(): Promise<Context> {
   root = await mkdtemp(join(tmpdir(), 'dsh-frontend-static-'))
   const dist = join(root, 'dist')
@@ -44,10 +43,6 @@ async function loadComposition(): Promise<Context> {
   await mkdir(join(dist, 'empty'))
   const configPath = join(root, 'cordis.yml')
   await writeFile(configPath, [
-    "- name: '@deepseek-ai/dsh-credentials-local'",
-    '  config:',
-    `    path: '${join(root, '.credentials.yaml')}'`,
-    '    watch: false',
     "- name: '@deepseek-ai/dsh-host-webserver'",
     '  config:',
     "    host: '127.0.0.1'",
@@ -65,7 +60,6 @@ async function loadComposition(): Promise<Context> {
   await context.plugin(Loader)
   context.loader.builtins.include = Include
   const modules = new Map<string, unknown>([
-    ['@deepseek-ai/dsh-credentials-local', LocalCredentials],
     ['@deepseek-ai/dsh-host-webserver', HttpServer],
     ['@deepseek-ai/dsh-client-connection', Connection],
     ['@deepseek-ai/dsh-host-frontend-static', FrontendStatic],
@@ -109,24 +103,7 @@ describe('real Loader composition', () => {
     expect(unloaded).toEqual([])
     const server = loaded.webServer
     const port = server.port
-    const launchUrl = loaded.connection.authenticatedUrl(`http://127.0.0.1:${String(port)}`)
-    const exchange = await fetch(launchUrl, { redirect: 'manual' })
-    expect(exchange.status).toBe(303)
-    expect(exchange.headers.get('location')).toBe('./')
-    const setCookie = exchange.headers.get('set-cookie')
-    if (setCookie === null) throw new Error('authenticated frontend did not set a cookie')
-    const cookie = setCookie.split(';', 1)[0]!
-    const authenticated = (init?: RequestInit): RequestInit => {
-      const headers = new Headers(init?.headers)
-      headers.set('cookie', cookie)
-      return { ...init, headers }
-    }
-
-    expect(await request(port, '/')).toMatchObject({
-      status: 401,
-      type: 'text/plain; charset=utf-8',
-      body: 'dsh web authentication required; pair again from the application that serves this page.\n',
-    })
+    expect((await request(port, '/')).status).toBe(200)
 
     // Real assets with their MIME types; a live rebuild is served on the next read.
     expect(await request(port, '/app.js')).toMatchObject({ status: 200, type: 'text/javascript; charset=utf-8', body: 'export {}' })
@@ -158,7 +135,7 @@ describe('real Loader composition', () => {
       rows.push({ kind: 'script-preload', src: 'plugins/boot.js' })
     })
     for (const path of ['/', '/index.html', '/?view=test']) {
-      const got = await request(port, path, authenticated())
+      const got = await request(port, path)
       expect(got.status).toBe(200)
       expect(got.type).toBe('text/html; charset=utf-8')
       expect(got.body).toContain('__T__')
@@ -171,23 +148,23 @@ describe('real Loader composition', () => {
       expect(base).toBeLessThan(got.body.indexOf('<link rel="preload" as="script" href="plugins/boot.js">'))
       expect(base).toBeLessThan(got.body.indexOf('<script>window.__T__=1</script>'))
     }
-    // An authenticated browser renders for the owner's shared browser Peer.
+    // A browser renders for the shared browser Peer.
     expect(renderedFor).toEqual([loaded.connection.browserPeer, loaded.connection.browserPeer, loaded.connection.browserPeer])
     offRows()
-    expect(await request(port, '/', authenticated({ method: 'HEAD' }))).toEqual({
+    expect(await request(port, '/', { method: 'HEAD' })).toEqual({
       status: 200,
       type: 'text/html; charset=utf-8',
       body: '',
     })
     untap()
-    expect((await request(port, '/', authenticated())).body).not.toContain('__T__')
+    expect((await request(port, '/')).body).not.toContain('__T__')
 
     // A missing configured index follows the same empty-404 contract for both
     // of its public entry paths and for both supported methods.
     await rm(join(root!, 'dist', 'index.html'))
     for (const path of ['/', '/index.html']) {
-      const get = await request(port, path, authenticated())
-      const head = await request(port, path, authenticated({ method: 'HEAD' }))
+      const get = await request(port, path)
+      const head = await request(port, path, { method: 'HEAD' })
       expect(get).toEqual({ status: 404, type: null, body: '' })
       expect(head).toEqual(get)
     }
@@ -209,7 +186,7 @@ describe('real Loader composition', () => {
       expect(get).toEqual({ status: 404, type: null, body: '' })
       expect(head).toEqual(get)
     }
-    expect(await request(port, '/api/no/such/route', authenticated())).toEqual({
+    expect(await request(port, '/api/no/such/route')).toEqual({
       status: 404,
       type: 'text/plain;charset=UTF-8',
       body: 'not found',
@@ -230,7 +207,7 @@ describe('real Loader composition', () => {
     expect(() => server.registerFallback(() => {})).not.toThrow()
   })
 
-  it('answers in-process reads for the given Peer without browser authentication', { timeout: 60_000 }, async () => {
+  it('answers in-process reads for the given Peer', { timeout: 60_000 }, async () => {
     const loaded = await loadComposition()
     const server = loaded.webServer
     const reader = { principal: { kind: 'owner' } } as Connection.PeerScope

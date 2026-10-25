@@ -5,7 +5,7 @@ import { mkdir, readFile, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import type { DailyScheduleRecord, ScheduleCatalogEntry } from '@deepseek-ai/dsh-schedule'
 import { expect, it } from 'vitest'
-import { withDefaultWeb, webGet, webRequest } from './default-web-process.ts'
+import { withDefaultWeb, webRequest } from './default-web-process.ts'
 
 const id = 'retained-remote-task' as DailyScheduleRecord['id']
 const sessionId = 'unloaded-owner' as ScheduleCatalogEntry['sessionId']
@@ -32,13 +32,10 @@ function encoded(value: unknown): string {
 }
 
 async function connect(url: string, signal: AbortSignal) {
-  const auth = await webGet(url, signal)
-  const cookie = auth.headers['set-cookie']?.[0]?.split(';', 1)[0]
-  if (cookie === undefined) throw new Error('Owned Web process did not issue its authentication cookie')
   return async (method: string, args: Record<string, unknown>) => {
     const rpcId = randomUUID()
     const response = await webRequest(new URL(`/api/${method}`, url), signal, {
-      method: 'POST', headers: { cookie, 'content-type': 'application/json' },
+      method: 'POST', headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ type: 'client-request', rpcId, method, payload: { args } }),
     })
     expect(response.status, response.text).toBe(200)

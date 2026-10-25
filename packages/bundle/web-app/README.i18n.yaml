@@ -9,8 +9,8 @@
   en: a85684740ecd278a
   zh: 7c54099b9edccf01
 /deepseek-ai-dsh-web-app/summary:
-  en: 0a2a9876194543e5
-  zh: ff472776a44ae260
+  en: b56c8d4601749596
+  zh: 779bd67f3d8f518a
 /deepseek-ai-dsh-web-app/table-of-contents:
   en: d152484eb41ac6b4
   zh: 09388d293f9be9cb
@@ -18,17 +18,17 @@
   en: 3bd37b85139d2fa7
   zh: ba86c807eb83866e
 /deepseek-ai-dsh-web-app/use-this-package/starting-the-web-gui:
-  en: acdf028c86e7ab62
-  zh: e59c3fc90bb093d0
+  en: 6c559856089846c0
+  zh: 256269940a180e02
 /deepseek-ai-dsh-web-app/use-this-package/configuration:
   en: b1787804544f2587
   zh: ce09d2c248ffd999
 /deepseek-ai-dsh-web-app/use-this-package/listening-trust-and-public-deployments:
-  en: d559df97a252fbde
-  zh: e16de7266c7aa61d
+  en: d1a80a510671899a
+  zh: 1ee8cdb313005186
 /deepseek-ai-dsh-web-app/use-this-package/running-over-ssh:
-  en: df205a26b6d49168
-  zh: e46ed7cf9e06248a
+  en: cd79284d04e509be
+  zh: ce6ab555d321298b
 /deepseek-ai-dsh-web-app/use-this-package/per-session-agent-setup:
   en: fdf38cb6e1b24464
   zh: c14a8bcac9d4e5cd
@@ -39,11 +39,11 @@
   en: a6d126f30b1594d7
   zh: 7f0ccc8a55d6f743
 /deepseek-ai-dsh-web-app/understand-the-implementation/advertised-application-url:
-  en: 0b22e03e28d41420
-  zh: fd45a97dd4336c25
+  en: c73ff7585c848648
+  zh: 8b49a79601537ae8
 /deepseek-ai-dsh-web-app/understand-the-implementation/readiness:
-  en: 973128fd346869df
-  zh: 54e6792f9f82a192
+  en: cdac3047a1d607ac
+  zh: 4840b29cebd2204d
 /deepseek-ai-dsh-web-app/understand-the-implementation/source-map:
   en: 58800b6f2142c34f
   zh: 10bf512b16db1cb8

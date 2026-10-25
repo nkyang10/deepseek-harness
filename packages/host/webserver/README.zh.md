@@ -54,13 +54,13 @@ kind: "package-reference"
       keyFile: /etc/dsh/tls/key.pem
 ```
 
-`ctx.webServer.protocol` 读出所绑定监听是 `'http:'` 还是 `'https:'`，因此按传输层制定请求策略（会话 Cookie 的 `Secure` 属性、来源检查）的插件只需读一个源自配置的值，无需检查 socket，也无需信任转发头。客户端仍会校验你提供的证书：本载体不附带信任库、不做 HTTP 到 HTTPS 的重定向，也不发送 HSTS 头。
+`ctx.webServer.protocol` 读出所绑定监听是 `'http:'` 还是 `'https:'`，因此按传输层制定请求策略（例如来源检查）的插件只需读一个源自配置的值，无需检查 socket，也无需信任转发头。客户端仍会校验你提供的证书：本载体不附带信任库、不做 HTTP 到 HTTPS 的重定向，也不发送 HSTS 头。
 
 ### 注册路由
 
 `register(route)` 添加具名的 `exact`／`prefix` HTTP route，`registerUpgrade(route)` 为精确 pathname 添加 upgrade route，两者返回的 disposer 都会移除注册。同一张表内的重复路径会抛错——route 模式是组合层约定，冲突即配置错误。HTTP 匹配先在整张表中匹配精确 route，再匹配最长前缀，最后交给回退；upgrade 只做精确匹配，未命中连接直接关闭。
 
-具名 route 可以用 `resource(request, peer?)` 代替 `handler`：一个把 Fetch `Request` 映射为 `Response` 的函数。经 HTTP 时只有 `GET` 与 `HEAD` 能到达它——其他方法得到带 `Allow: GET, HEAD` 的 405，请求 body 从不读取——请求不带 Peer，携带客户端的 header，URL 是把请求目标按一个占位 origin 解析得到的，客户端的 authority 只保留在 `host` 头里。响应按背压写回，gzip 的处理与 handler 的响应相同；`HEAD` 不发送 body，客户端断开会中止 `request.signal` 并取消 body。`readResource(request, peer)` 返回同一 URL 经 HTTP 会得到的响应，由 resource 按 `peer` 计算（`HEAD` 读取不返回 body）：它遵循 HTTP 的匹配顺序；路径属于 handler、或落到未认领或 handler 形式的回退时返回 404；`GET`、`HEAD` 以外的方法返回 405；不检查 cookie、Host 或 Origin，因此调用方须先准入读者。
+具名 route 可以用 `resource(request, peer?)` 代替 `handler`：一个把 Fetch `Request` 映射为 `Response` 的函数。经 HTTP 时只有 `GET` 与 `HEAD` 能到达它——其他方法得到带 `Allow: GET, HEAD` 的 405，请求 body 从不读取——请求不带 Peer，携带客户端的 header，URL 是把请求目标按一个占位 origin 解析得到的，客户端的 authority 只保留在 `host` 头里。响应按背压写回，gzip 的处理与 handler 的响应相同；`HEAD` 不发送 body，客户端断开会中止 `request.signal` 并取消 body。`readResource(request, peer)` 返回同一 URL 经 HTTP 会得到的响应，由 resource 按 `peer` 计算（`HEAD` 读取不返回 body）：它遵循 HTTP 的匹配顺序；路径属于 handler、或落到未认领或 handler 形式的回退时返回 404；`GET`、`HEAD` 以外的方法返回 405；不检查 Host 或 Origin，因此调用方须先准入读者。
 
 ### 回退席位
 
@@ -129,7 +129,7 @@ index 启动输入分两层，按页面所代表的 Peer 计算。`collectIndexI
 这些限制说明服务器在何处有意保持最小。它们是当前包约束，不是任务积压。
 
 - **不管理证书生命周期**：`tls` 只提供激活时存在的 PEM 文件——载体从不申请、续期或监视它们，并采用 Node 默认的 TLS 策略。替换证书需要重新加载。
-- **不提供服务器级认证或来源策略**：`dsh-client-connection` 等 route owner 会实施自己的请求策略。绑定非回环地址仍会向该网络公开未受保护的 route 与静态资源。
+- **不提供服务器级请求策略**：`dsh-client-connection` 等 route owner 会实施自己的请求策略。绑定非回环地址会把该监听上的每个 route 与静态资源以 owner 身份向该网络公开。
 - **Socket 选项固定不变**：配置只选择绑定宿主与端口；在具体部署产生需求前，backlog 和其他 socket 设置仍保持内部实现。
 
 <a id="dev-note"></a>

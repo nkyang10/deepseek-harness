@@ -3,25 +3,8 @@
 import type { Branded } from '@deepseek-ai/dsh-brand'
 import type { PeerScope, Principal } from '@deepseek-ai/dsh-typert-protocol'
 
-/** Opaque identifier of one paired browser; never a secret and never reused. */
-export type BrowserDeviceId = Branded<'browser-device-id'>
-
-/**
- * One paired browser: who it presented itself as, when it paired, when it was
- * last seen, and when its signed cookie stops verifying.
- */
-export interface BrowserSession {
-  /** Identifier minted when this browser first exchanged the pairing code. */
-  readonly id: BrowserDeviceId
-  /** The pairing request's `User-Agent`, truncated; empty when it sent none. */
-  readonly userAgent: string
-  /** Epoch milliseconds of this browser's first pairing. */
-  readonly pairedAt: number
-  /** Epoch milliseconds of the most recent request this session authenticated. */
-  readonly lastSeenAt: number
-  /** Epoch milliseconds after which this session's cookie stops verifying. */
-  readonly expiresAt: number
-}
+/** Whether a Peer participates in forwarded human interactions. */
+export type ConnectionInteractions = 'answer' | 'none'
 
 /** Correlation id minted by a caller and echoed by the Connection response. */
 export type RpcId = Branded<'rpc-id'>
@@ -114,7 +97,7 @@ export interface ServerResponse {
 /** Complete Connection RPC envelope union. */
 export type RpcMessage = ClientRequest | ServerResponse
 
-/** HTTP request facts consumed by browser trust and authentication. */
+/** HTTP request facts consumed by the Host/Origin trust fence. */
 export interface ConnectionTrustRequest {
   /** Request headers supplied by either the Fetch or node:http representation. */
   readonly headers: Headers | Readonly<Record<string, string | readonly string[] | undefined>>
@@ -123,31 +106,10 @@ export interface ConnectionTrustRequest {
 /** HTTP status returned before dispatch, or undefined when the request may proceed. */
 export type ConnectionRequestRejection = 401 | 403 | undefined
 
-/** Root/index request facts used by the browser-token exchange. */
-export interface ConnectionIndexRequest extends ConnectionTrustRequest {
-  readonly method?: string | undefined
-  readonly url?: string | undefined
-}
-
-/** Root/index response operations owned by the browser-token exchange. */
-export interface ConnectionIndexResponse {
-  writeHead(status: number, headers?: Readonly<Record<string, string>>): unknown
-  end(body?: string): unknown
-}
-
 /** Outcome of admitting one request: the Peer it speaks for, or the status refusing it. */
 export type PeerAdmission =
   | { readonly peer: PeerScope }
   | { readonly rejection: 401 | 403 }
-
-/** Socket admission claims API ownership until its carrier calls release, including failed upgrades. */
-export type ConnectionAdmission =
-  | {
-    readonly peer: PeerScope
-    /** Remove and dispose an API Peer; browser releases leave the shared browser Peer intact. */
-    readonly release: () => Promise<void>
-  }
-  | { readonly rejection: 401 | 403 | 409 }
 
 /**
  * Handler invoked after Connection has decoded the transport envelope.
@@ -228,7 +190,7 @@ export interface HostConnectionHandle {
   readonly rpc: HostConnectionRpc
   /** Exact Fetch routes for streaming or browser-native responses. */
   readonly fetch: HostConnectionFetch
-  /** The owner Peer every authenticated browser connection shares. */
+  /** The owner Peer every browser connection shares. */
   readonly browserPeer: PeerScope
 
   /**
@@ -240,80 +202,30 @@ export interface HostConnectionHandle {
   /**
    * Compose exact Fetch routes and the shared-channel RPC interceptor.
    * @param channel - shared channel mounted by Connection.
-   * @returns Fetch handler for trusted, authenticated requests.
+   * @returns Fetch handler for requests that pass the trust fence.
    */
   createSharedFetchHandler(channel: '/api'): ConnectionFetchHandler
 
   /**
-   * Apply Connection's Host/Origin checks and browser authentication to
-   * another Web route.
+   * Apply Connection's Host/Origin checks to another Web route.
    * @param request - request headers from the HTTP or upgrade request.
    * @returns rejection status, or undefined when the route may accept the request.
    */
   requestRejection(request: ConnectionTrustRequest): ConnectionRequestRejection
 
   /**
-   * Admit an HTTP request against its signed browser or API credential and live Peer.
+   * Admit an HTTP request through the Host/Origin trust fence.
    * @param request - request headers from the HTTP or upgrade request.
-   * @returns the credential's Peer, or the rejection status.
+   * @returns the shared browser Peer, or the rejection status.
    */
   admit(request: ConnectionTrustRequest): PeerAdmission
 
   /**
-/**
    * Create an independent in-process Peer, disposed with the Context that read `ctx.connection`.
    * @param options - fixed principal and optional interaction participation (default `answer`).
    * @returns a new Peer distinct from every other Peer.
    */
-  createPeer(options: { readonly principal: Principal; readonly interactions?: 'answer' | 'none' }): PeerScope
-
-  /**
-   * Claim a physical socket for an API Peer; browser sockets share their owner Peer.
-   * @param request - authenticated upgrade request headers.
-   * @returns the Peer and idempotent release, or 409 for duplicate API ownership.
-   * The carrier releases on socket termination or failed upgrade; release removes
-   * API admission synchronously without cancelling independent HTTP calls.
-   */
-  admitConnection(request: ConnectionTrustRequest): ConnectionAdmission
-
-  /**
-   * Authenticate one frontend index request, owning a pairing redirect or 401.
-   * The cookie this mints is `Secure` when the mounted Web carrier serves TLS,
-   * which only that listener's protocol decides.
-   * @param request - root or configured-index HTTP request.
-   * @param response - response owned when the result is false.
-   * @returns true only when the frontend may serve index.html.
-   */
-  authorizeIndex(request: ConnectionIndexRequest, response: ConnectionIndexResponse): Promise<boolean>
-
-  /**
-   * Add the deployment's durable pairing code to an ordinary Web application
-   * URL. Whoever opens the result pairs a new browser session.
-   * @param baseUrl - clean application URL whose authority and mount are preserved.
-   * @returns pairing URL for a new browser; a mount proxy strips its prefix before {@link authorizeIndex}.
-   */
-  authenticatedUrl(baseUrl: string): string
-
-  /**
-   * List the browsers currently paired with this deployment, newest pairing
-   * last, after writing back the last-seen times collected while answering
-   * requests and dropping sessions whose lifetime has passed.
-   * @returns the live sessions.
-   */
-  listBrowserSessions(): Promise<readonly BrowserSession[]>
-
-  /**
-   * End one paired browser's access. Every cookie naming that session stops
-   * verifying at once; other sessions and the pairing code are untouched.
-   * @param id - the session to revoke.
-   */
-  revokeBrowserSession(id: BrowserDeviceId): Promise<void>
-
-  /**
-   * Replace the pairing code, so previously shared links no longer pair new
-   * browsers while already paired browsers keep their sessions.
-   */
-  rotatePairingCode(): Promise<void>
+  createPeer(options: { readonly principal: Principal; readonly interactions?: ConnectionInteractions }): PeerScope
 }
 
 /** Transport-independent Fetch handler used by HTTP and worker carriers. */

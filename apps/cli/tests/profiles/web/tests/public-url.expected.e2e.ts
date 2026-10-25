@@ -1,4 +1,4 @@
-/** Built Web-profile acceptance for concrete bind addresses, the advertised public root, and browser authentication. */
+/** Built Web-profile acceptance for concrete bind addresses and the advertised public root. */
 
 import { existsSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { request as httpRequest, type IncomingMessage } from 'node:http'
@@ -175,7 +175,7 @@ function expectCleanExit(stopped: StoppedWeb): void {
  */
 async function request(
   protocol: 'http:' | 'https:',
-  dial: string, port: number, path: string, host: string, method: 'GET' | 'POST', cookie?: string, ca?: string,
+  dial: string, port: number, path: string, host: string, method: 'GET' | 'POST', ca?: string,
 ): Promise<Response> {
   const { promise, resolve, reject } = Promise.withResolvers<IncomingMessage>()
   const req = (protocol === 'http:' ? httpRequest : httpsRequest)({
@@ -184,7 +184,6 @@ async function request(
     headers: {
       host, 'content-type': 'application/json',
       ...protocol === 'http:' ? {} : { origin: `https://${host}` },
-      ...cookie === undefined ? {} : { cookie },
     },
   }, resolve)
   req.once('error', reject)
@@ -200,20 +199,8 @@ async function request(
   return new Response(Readable.toWeb(response) as ReadableStream<Uint8Array>, { status: response.statusCode!, headers })
 }
 
-/** Establish the browser session needed by the protected API, keeping the minted cookie's own attributes. */
-async function exchange(
-  protocol: 'http:' | 'https:',
-  dial: string, port: number, path: string, host: string, ca?: string,
-): Promise<{ cookie: string; setCookie: string }> {
-  const response = await request(protocol, dial, port, path, host, 'GET', undefined, ca)
-  const setCookie = response.headers.get('set-cookie')
-  await response.arrayBuffer()
-  if (setCookie === null) throw new Error(`entry returned ${String(response.status)} without a browser cookie`)
-  return { cookie: setCookie.split(';', 1)[0]!, setCookie }
-}
-
 describe.skipIf(!builtArtifactsExist)('dsh Web profile bind address and advertised root', () => {
-  it('serves the default advertised URL over verified TLS with Secure browser authentication', async () => {
+  it('serves the default advertised URL over verified TLS', async () => {
     const root = mkdtempSync(join(tmpdir(), 'dsh-web-tls-'))
     try {
       const tls = await materializeTlsFixture(root)
@@ -221,19 +208,12 @@ describe.skipIf(!builtArtifactsExist)('dsh Web profile bind address and advertis
         expect(web.startup.origin).toBe(`https://127.0.0.1:${String(web.port)}`)
         await expect(request('https:', '127.0.0.1', web.port, '/', web.startup.host, 'GET'))
           .rejects.toThrow(/self-signed certificate/i)
-        const { cookie, setCookie } = await exchange(
-          'https:', '127.0.0.1', web.port, `${web.startup.pathname}${web.startup.search}`, web.startup.host, tls.ca,
-        )
-        expect(setCookie).toContain('; Secure')
-        const index = await request('https:', '127.0.0.1', web.port, '/', web.startup.host, 'GET', cookie, tls.ca)
+        const index = await request('https:', '127.0.0.1', web.port, '/', web.startup.host, 'GET', tls.ca)
         expect(index.status).toBe(200)
         expect(await index.text()).toContain('<html')
-        const response = await request('https:', '127.0.0.1', web.port, '/api/session/create', web.startup.host, 'POST', cookie, tls.ca)
+        const response = await request('https:', '127.0.0.1', web.port, '/api/session/create', web.startup.host, 'POST', tls.ca)
         expect(response.status).toBe(200)
         expect(await response.json()).toMatchObject({ result: { ok: true } })
-        const unauthenticated = await request('https:', '127.0.0.1', web.port, '/api/session/create', web.startup.host, 'POST', undefined, tls.ca)
-        expect(unauthenticated.status).toBe(401)
-        await unauthenticated.arrayBuffer()
         expectCleanExit(await web.stop())
       })
     } finally {
@@ -241,11 +221,10 @@ describe.skipIf(!builtArtifactsExist)('dsh Web profile bind address and advertis
     }
   })
 
-  it('serves authenticated requests at the advertised mount and at loopback', async () => {
+  it('serves requests at the advertised mount and at loopback', async () => {
     await withWeb(['--public-url', `http://gateway.example${MOUNT.slice(0, -1)}`, '--trusted-host', 'gateway.example'], async (web) => {
       expect(web.startup.origin).toBe('http://gateway.example')
       expect(web.startup.pathname).toBe(MOUNT)
-      expect(web.startup.searchParams.get('token')).not.toBeNull()
       const proxy = await startPrefixProxy({ prefix: MOUNT })
       try {
         proxy.setTarget(web.port)
@@ -254,8 +233,7 @@ describe.skipIf(!builtArtifactsExist)('dsh Web profile bind address and advertis
           { dial: '127.0.0.1', port: web.port, prefix: '/', host: `127.0.0.1:${String(web.port)}` },
         ]
         for (const entry of entries) {
-          const { cookie } = await exchange('http:', entry.dial, entry.port, `${entry.prefix}${web.startup.search}`, entry.host)
-          const response = await request('http:', entry.dial, entry.port, `${entry.prefix}api/session/create`, entry.host, 'POST', cookie)
+          const response = await request('http:', entry.dial, entry.port, `${entry.prefix}api/session/create`, entry.host, 'POST')
           expect(response.status).toBe(200)
           expect(await response.json()).toMatchObject({ result: { ok: true } })
         }
@@ -274,31 +252,24 @@ describe.skipIf(!builtArtifactsExist)('dsh Web profile bind address and advertis
     await withWeb(['--host', NON_LOOPBACK_IPV4!, '--trusted-host', trustedHost], async (web) => {
       expect(web.startup.origin).toBe(`http://${NON_LOOPBACK_IPV4!}:${String(web.port)}`)
       expect(web.startup.pathname).toBe('/')
-      const token = web.startup.searchParams.get('token')
-      expect(token).not.toBeNull()
       const authority = `${NON_LOOPBACK_IPV4!}:${String(web.port)}`
-      const { cookie, setCookie } = await exchange('http:', NON_LOOPBACK_IPV4!, web.port, `/${web.startup.search}`, authority)
-      // The carrier is plain HTTP, where a browser never returns a Secure cookie.
-      expect(setCookie).not.toContain('; Secure')
-      const authenticated = await request('http:', NON_LOOPBACK_IPV4!, web.port, '/api/session/create', authority, 'POST', cookie)
-      expect(authenticated.status).toBe(200)
-      expect(await authenticated.json()).toMatchObject({ result: { ok: true } })
+      const served = await request('http:', NON_LOOPBACK_IPV4!, web.port, '/api/session/create', authority, 'POST')
+      expect(served.status).toBe(200)
+      expect(await served.json()).toMatchObject({ result: { ok: true } })
 
       // A declared authority is admitted without being advertised; any other
       // name for the same socket is a rebound Host.
       const declared = `${trustedHost}:${String(web.port)}`
-      const declaredSession = await exchange('http:', NON_LOOPBACK_IPV4!, web.port, `/${web.startup.search}`, declared)
-      const viaDeclared = await request('http:', NON_LOOPBACK_IPV4!, web.port, '/api/session/create', declared, 'POST', declaredSession.cookie)
+      const viaDeclared = await request('http:', NON_LOOPBACK_IPV4!, web.port, '/api/session/create', declared, 'POST')
       expect(viaDeclared.status).toBe(200)
       await viaDeclared.arrayBuffer()
-      const rebound = await request('http:', NON_LOOPBACK_IPV4!, web.port, '/api/session/create', `evil.example:${String(web.port)}`, 'POST', cookie)
+      const rebound = await request('http:', NON_LOOPBACK_IPV4!, web.port, '/api/session/create', `evil.example:${String(web.port)}`, 'POST')
       expect(rebound.status).toBe(403)
       await rebound.arrayBuffer()
 
       const stopped = await web.stop()
       expectCleanExit(stopped)
       expect(stopped.stderr).toContain(`listening on ${NON_LOOPBACK_IPV4!} over plain HTTP`)
-      expect(stopped.stderr).not.toContain(token!)
     })
   })
 
@@ -307,12 +278,9 @@ describe.skipIf(!builtArtifactsExist)('dsh Web profile bind address and advertis
     await withWeb(['--host', NON_LOOPBACK_IPV4!, '--public-url', 'https://app.example/', '--trusted-host', 'app.example'], async (web) => {
       expect(web.startup.origin).toBe('https://app.example')
       expect(web.startup.host).toBe('app.example')
-      const token = web.startup.searchParams.get('token')
-      expect(token).not.toBeNull()
-      const { cookie } = await exchange('http:', NON_LOOPBACK_IPV4!, web.port, `/${web.startup.search}`, 'app.example')
-      const authenticated = await request('http:', NON_LOOPBACK_IPV4!, web.port, '/api/session/create', 'app.example', 'POST', cookie)
-      expect(authenticated.status).toBe(200)
-      expect(await authenticated.json()).toMatchObject({ result: { ok: true } })
+      const served = await request('http:', NON_LOOPBACK_IPV4!, web.port, '/api/session/create', 'app.example', 'POST')
+      expect(served.status).toBe(200)
+      expect(await served.json()).toMatchObject({ result: { ok: true } })
 
       const stopped = await web.stop()
       expectCleanExit(stopped)
@@ -326,12 +294,11 @@ describe.skipIf(!builtArtifactsExist)('dsh Web profile bind address and advertis
   ])('prints an IPv4 root for mapped loopback %s and serves it', async (host) => {
     await withWeb(['--host', host], async (web) => {
       expect(web.startup.origin).toBe(`http://127.0.0.1:${String(web.port)}`)
-      const { cookie } = await exchange('http:', web.startup.hostname, web.port, `/${web.startup.search}`, web.startup.host)
-      const authenticated = await request(
-        'http:', web.startup.hostname, web.port, '/api/session/create', web.startup.host, 'POST', cookie,
+      const served = await request(
+        'http:', web.startup.hostname, web.port, '/api/session/create', web.startup.host, 'POST',
       )
-      expect(authenticated.status).toBe(200)
-      expect(await authenticated.json()).toMatchObject({ result: { ok: true } })
+      expect(served.status).toBe(200)
+      expect(await served.json()).toMatchObject({ result: { ok: true } })
 
       const stopped = await web.stop()
       expectCleanExit(stopped)
@@ -343,10 +310,9 @@ describe.skipIf(!builtArtifactsExist)('dsh Web profile bind address and advertis
     await withWeb(['--host', host], async (web) => {
       expect(web.startup.origin).toBe(`http://[::1]:${String(web.port)}`)
       const authority = `[::1]:${String(web.port)}`
-      const { cookie } = await exchange('http:', '::1', web.port, `/${web.startup.search}`, authority)
-      const authenticated = await request('http:', '::1', web.port, '/api/session/create', authority, 'POST', cookie)
-      expect(authenticated.status).toBe(200)
-      expect(await authenticated.json()).toMatchObject({ result: { ok: true } })
+      const served = await request('http:', '::1', web.port, '/api/session/create', authority, 'POST')
+      expect(served.status).toBe(200)
+      expect(await served.json()).toMatchObject({ result: { ok: true } })
 
       const stopped = await web.stop()
       expectCleanExit(stopped)

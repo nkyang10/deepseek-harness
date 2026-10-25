@@ -174,7 +174,7 @@ export async function withDefaultWeb(
  * Read an owned loopback response without inheriting Node's process-start proxy dispatcher.
  * @param url - URL of the test-owned Web process.
  * @param signal - owning test cancellation signal.
- * @param headers - optional authentication cookie.
+ * @param headers - optional request headers.
  * @returns complete response after its stream ends.
  */
 export function webGet(

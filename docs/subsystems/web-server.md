@@ -44,7 +44,7 @@ interface WebResourceRoute {
 }
 ```
 
-Match order is fixed: exact table first, then longest matching prefix, then the registered fallback. Registration order carries no request-facing semantics — named routes are composed to be disjoint, and the fallback seat answers anything no named route claims; one owner only, a second registration throws. The shipped Web composition claims the seat with [`dsh-host-frontend-static`](../../packages/host/frontend-static/src/index.ts), the SPA dist server with locked semantics: Connection authenticates the dist root and configured index before their HTML is read; non-index assets remain public; non-GET/HEAD is 405, traversal outside the dist root is 403, existing files are served directly, absent or non-file targets are empty 404 responses, and unknown extensions ship as octet-stream.
+Match order is fixed: exact table first, then longest matching prefix, then the registered fallback. Registration order carries no request-facing semantics — named routes are composed to be disjoint, and the fallback seat answers anything no named route claims; one owner only, a second registration throws. The shipped Web composition claims the seat with [`dsh-host-frontend-static`](../../packages/host/frontend-static/src/index.ts), the SPA dist server with locked semantics: every request is served for whoever reached the listener, an index request rendering for the owner's shared browser Peer; non-GET/HEAD is 405, traversal outside the dist root is 403, existing files are served directly, absent or non-file targets are empty 404 responses, and unknown extensions ship as octet-stream.
 
 A route or the fallback may give a resource, a function from a Fetch `Request` to a `Response`, instead of a handler. HTTP `GET` and `HEAD` requests reach it without a Peer, and `readResource(request, peer)` reads it in process for the Peer its caller admitted; a read follows the same match order but reaches only resources, so a route that returns owner-private data or performs an action stays a handler even when it answers `GET`.
 
@@ -99,7 +99,7 @@ interface TlsConfig {
 }
 ```
 
-No composition can bind every interface at once: the unspecified address is rejected at load. The exported `isWildcardHost` and `isLoopbackHost` classify a bind address from its parsed value, and an IPv6 `%zone` is kept for `listen` while classification reads the address alone. The carrier owns no authentication or Origin policy, and it serves plain HTTP unless `tls` supplies a certificate and key. `compression` defaults to `none`; the shipped Web bundle selects gzip level 1 with a 1024-byte threshold. The shipped `dsh web` command selects loopback by default and accepts one concrete `--host` address, warning at startup when a non-loopback bind serves plain HTTP; its Connection plugin supplies Host/Origin checks plus browser-session authentication for every Host API route and stream, and the bind address plus `--trusted-host` govern which browser Host is accepted; `--public-url` changes only the advertised URL. Other compositions own their bind and route-authentication policy. The dist location is an assembly fact of the frontend plugin that claims the seat.
+No composition can bind every interface at once: the unspecified address is rejected at load. The exported `isWildcardHost` and `isLoopbackHost` classify a bind address from its parsed value, and an IPv6 `%zone` is kept for `listen` while classification reads the address alone. The carrier owns no authentication or Origin policy, and it serves plain HTTP unless `tls` supplies a certificate and key. `compression` defaults to `none`; the shipped Web bundle selects gzip level 1 with a 1024-byte threshold. The shipped `dsh web` command selects loopback by default and accepts one concrete `--host` address, warning at startup when a non-loopback bind serves plain HTTP; its Connection plugin supplies Host/Origin checks plus owner Peer admission for every Host API route and stream, and the bind address plus `--trusted-host` govern which browser Host is accepted; `--public-url` changes only the advertised URL. Other compositions own their bind and route-authentication policy. The dist location is an assembly fact of the frontend plugin that claims the seat.
 
 ## The service
 
@@ -125,80 +125,30 @@ Host `ctx.connection` members consumed by transport-independent adapters.
 /**
  * Compose exact Fetch routes and the shared-channel RPC interceptor.
  * @param channel - shared channel mounted by Connection.
- * @returns Fetch handler for trusted, authenticated requests.
+ * @returns Fetch handler for requests that pass the trust fence.
  */
 createSharedFetchHandler(channel: '/api'): ConnectionFetchHandler
 
 /**
- * Apply Connection's Host/Origin checks and browser authentication to
- * another Web route.
+ * Apply Connection's Host/Origin checks to another Web route.
  * @param request - request headers from the HTTP or upgrade request.
  * @returns rejection status, or undefined when the route may accept the request.
  */
 requestRejection(request: ConnectionTrustRequest): ConnectionRequestRejection
 
 /**
- * Admit an HTTP request against its signed browser or API credential and live Peer.
+ * Admit an HTTP request through the Host/Origin trust fence.
  * @param request - request headers from the HTTP or upgrade request.
- * @returns the credential's Peer, or the rejection status.
+ * @returns the shared browser Peer, or the rejection status.
  */
 admit(request: ConnectionTrustRequest): PeerAdmission
 
-/**
 /**
  * Create an independent in-process Peer, disposed with the Context that read `ctx.connection`.
  * @param options - fixed principal and optional interaction participation (default `answer`).
  * @returns a new Peer distinct from every other Peer.
  */
-createPeer(options: { readonly principal: Principal; readonly interactions?: 'answer' | 'none' }): PeerScope
-
-/**
- * Claim a physical socket for an API Peer; browser sockets share their owner Peer.
- * @param request - authenticated upgrade request headers.
- * @returns the Peer and idempotent release, or 409 for duplicate API ownership.
- * The carrier releases on socket termination or failed upgrade; release removes
- * API admission synchronously without cancelling independent HTTP calls.
- */
-admitConnection(request: ConnectionTrustRequest): ConnectionAdmission
-
-/**
- * Authenticate one frontend index request, owning a pairing redirect or 401.
- * The cookie this mints is `Secure` when the mounted Web carrier serves TLS,
- * which only that listener's protocol decides.
- * @param request - root or configured-index HTTP request.
- * @param response - response owned when the result is false.
- * @returns true only when the frontend may serve index.html.
- */
-authorizeIndex(request: ConnectionIndexRequest, response: ConnectionIndexResponse): Promise<boolean>
-
-/**
- * Add the deployment's durable pairing code to an ordinary Web application
- * URL. Whoever opens the result pairs a new browser session.
- * @param baseUrl - clean application URL whose authority and mount are preserved.
- * @returns pairing URL for a new browser; a mount proxy strips its prefix before {@link authorizeIndex}.
- */
-authenticatedUrl(baseUrl: string): string
-
-/**
- * List the browsers currently paired with this deployment, newest pairing
- * last, after writing back the last-seen times collected while answering
- * requests and dropping sessions whose lifetime has passed.
- * @returns the live sessions.
- */
-listBrowserSessions(): Promise<readonly BrowserSession[]>
-
-/**
- * End one paired browser's access. Every cookie naming that session stops
- * verifying at once; other sessions and the pairing code are untouched.
- * @param id - the session to revoke.
- */
-revokeBrowserSession(id: BrowserDeviceId): Promise<void>
-
-/**
- * Replace the pairing code, so previously shared links no longer pair new
- * browsers while already paired browsers keep their sessions.
- */
-rotatePairingCode(): Promise<void>
+createPeer(options: { readonly principal: Principal; readonly interactions?: ConnectionInteractions }): PeerScope
 ```
 
 Types: [Principal](typert.md)
@@ -327,13 +277,13 @@ Source: [`packages/host/webserver/src/index.ts`](../../packages/host/webserver/s
 
 #### `connection/request` — waterfall
 
-Admit or wrap an authenticated shared API request, including body transfer. Existing requests continue when a listener refuses subsequent requests.
+Admit or wrap an admitted shared API request, including body transfer. Existing requests continue when a listener refuses subsequent requests.
 
 ```ts cordis-catalog
 /**
- * Admit or wrap an authenticated shared API request, including body transfer.
+ * Admit or wrap an admitted shared API request, including body transfer.
  * Existing requests continue when a listener refuses subsequent requests.
- * @param request - Authenticated incoming HTTP request.
+ * @param request - Incoming HTTP request that passed the trust fence.
  * @param response - Response owned until the delegated bridge settles.
  * @param next - Delegate to the next listener or the shared API bridge.
  * @mode waterfall
