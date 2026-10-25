@@ -367,9 +367,14 @@
   color: var(--dsw-alias-label-secondary);
 }
 
-.drawerHandle:hover,
 .drawerHandle:active {
   color: var(--dsw-alias-label-primary);
+}
+
+@media (hover: hover) {
+  .drawerHandle:hover {
+    color: var(--dsw-alias-label-primary);
+  }
 }
 
 .drawerHandle > svg {
