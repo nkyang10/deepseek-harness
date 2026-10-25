@@ -13,7 +13,18 @@ vi.mock('node:child_process', async (importOriginal) => {
   return { ...await importOriginal<typeof import('node:child_process')>(),
     execFile: Object.assign(vi.fn(), { [promisify.custom]: payload }) }
 })
-vi.mock('../scripts/smoke-runtime.ts', () => ({ smokeDesktopRuntime: vi.fn(async () => {}) }))
+vi.mock('../scripts/smoke-runtime.ts', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../scripts/smoke-runtime.ts')>()
+  return { ...actual, smokeDesktopRuntime: vi.fn(async () => {}) }
+})
+
+async function waitForRemoval(directory: string): Promise<void> {
+  for (let attempt = 0; attempt < 100; attempt += 1) {
+    if (!existsSync(directory)) return
+    await new Promise<void>(resolve => setTimeout(resolve, 20))
+  }
+  expect(existsSync(directory)).toBe(false)
+}
 
 const roots: string[] = []
 const hostArch = Object.getOwnPropertyDescriptor(process, 'arch')!
@@ -61,5 +72,5 @@ it('smokes an x64 target verified on an arm64 build host without revalidating ag
   expect(payload.mock.calls[0]![1]).toEqual(expect.arrayContaining([root, resources]))
   expect(smokeDesktopRuntime).toHaveBeenCalledWith(root, electron, descriptor, expect.any(Object), resources)
   const environment = vi.mocked(smokeDesktopRuntime).mock.calls[0]![3]
-  expect(existsSync(environment.NARB_NATIVE_CACHE_DIR!)).toBe(false)
+  await waitForRemoval(environment.NARB_NATIVE_CACHE_DIR!)
 })

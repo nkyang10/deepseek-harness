@@ -153,6 +153,15 @@ describe('maintained repository reference policy', () => {
     expect(scanRepositoryReferences(fixture.root)).toEqual([{ file: 'unique.md', line: 1, kind: 'commit-hash' }])
   })
 
+  it('ignores short decimal-only numeric values even when they name an available commit prefix', () => {
+    expect(findRepositoryReferences('lock', 'size = 6344383', new Set(['6344383']))).toEqual([])
+  })
+
+  it('rejects a long decimal-only prefix that names an available commit identifier', () => {
+    expect(findRepositoryReferences('lock', '012345678901', new Set(['012345678901'])))
+      .toEqual([{ file: 'lock', line: 1, kind: 'commit-hash' }])
+  })
+
   it('accepts hexadecimal branch names that do not match the referenced commit identifier', (test) => {
     const fixture = repository(test)
     const branch = 'b'.repeat(12)

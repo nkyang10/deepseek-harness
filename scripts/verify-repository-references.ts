@@ -31,6 +31,10 @@ function isMaintained(file: string): boolean {
   return !excludedPrefixes.some(prefix => file.startsWith(prefix))
 }
 
+function isCommitIdentifier(candidate: string): boolean {
+  return /[a-f]/i.test(candidate) || candidate.length >= 12
+}
+
 /**
  * Inspect a maintained source file against known commit identifiers.
  * @param file - Repository-relative path used in diagnostics and exclusions.
@@ -49,7 +53,8 @@ export function findRepositoryReferences(
     if (organizationUrl.test(canonicalReferenceText(line).replace(kitRepositoryUrl, ''))) {
       references.push({ file, line: index + 1, kind: 'organization-url' })
     }
-    if ([...line.matchAll(commitCandidate)].some(match => commits.has(match[0].toLowerCase()))) {
+    if ([...line.matchAll(commitCandidate)].some(match =>
+      isCommitIdentifier(match[0]) && commits.has(match[0].toLowerCase()))) {
       references.push({ file, line: index + 1, kind: 'commit-hash' })
     }
   }
@@ -111,7 +116,9 @@ export function uniquePrefixMatch(objects: readonly string[], prefix: string): s
  */
 export function repositoryCommits(repoRoot: string, sources: Iterable<string>): Set<string> {
   const candidates = [...new Set([...sources].flatMap(source =>
-    [...source.matchAll(commitCandidate)].map(match => match[0].toLowerCase())))]
+    [...source.matchAll(commitCandidate)]
+      .filter(match => isCommitIdentifier(match[0]))
+      .map(match => match[0].toLowerCase())))]
   if (candidates.length === 0) return new Set()
   // Git resolves prefixes across all available objects, including unreachable and alternate ones;
   // one listing of those objects replaces one Git prefix lookup per candidate.

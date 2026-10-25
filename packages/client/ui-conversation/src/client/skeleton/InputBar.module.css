@@ -81,7 +81,7 @@
    Settings font-size preference yields to the floor on touch devices. */
 @media (pointer: coarse) {
   .card {
-    font-size: max(var(--dsh-content-font-size, 14px), 16px);
+    font-size: max(16px, var(--dsh-content-font-size, 14px));
   }
 }
 
@@ -112,8 +112,10 @@
   pointer-events: none;
 }
 
-.cardWorkspaceTrigger:hover::after {
-  color: var(--dsw-alias-state-business-primary);
+@media (hover: hover) {
+  .cardWorkspaceTrigger:hover::after {
+    color: var(--dsw-alias-state-business-primary);
+  }
 }
 
 .accessory {
@@ -339,8 +341,10 @@
   cursor: pointer;
 }
 
-.add:hover:not(:disabled) {
-  background: var(--dsw-alias-interactive-bg-hover-solid);
+@media (hover: hover) {
+  .add:hover:not(:disabled) {
+    background: var(--dsw-alias-interactive-bg-hover-solid);
+  }
 }
 
 .add:disabled {
@@ -371,8 +375,10 @@
   appearance: none;
 }
 
-.select:hover:not(:disabled) {
-  background-color: var(--dsw-alias-interactive-bg-hover);
+@media (hover: hover) {
+  .select:hover:not(:disabled) {
+    background-color: var(--dsw-alias-interactive-bg-hover);
+  }
 }
 
 .select:disabled {
@@ -404,8 +410,10 @@
   transform: translateY(-2px);
 }
 
-.primary:hover:not(:disabled) {
-  background: var(--dsw-alias-button-info-hover);
+@media (hover: hover) {
+  .primary:hover:not(:disabled) {
+    background: var(--dsw-alias-button-info-hover);
+  }
 }
 
 .primary:disabled {
