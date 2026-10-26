@@ -794,7 +794,8 @@ async function main(): Promise<void> {
     return browserGuests.release(event.sender, lease)
   })
 
-  session.defaultSession.webRequest.onBeforeSendHeaders({ urls: ['ws://127.0.0.1/*', 'wss://127.0.0.1/*'] }, (details, callback) => {
+  // The Host can bind a LAN address; match every WebSocket and accept only the owned window and Host origin below.
+  session.defaultSession.webRequest.onBeforeSendHeaders({ urls: ['ws://*/*', 'wss://*/*'] }, (details, callback) => {
     if (hostUrl === undefined || hostCookie === undefined || details.webContentsId !== mainWindow?.webContents.id) {
       callback({})
       return
