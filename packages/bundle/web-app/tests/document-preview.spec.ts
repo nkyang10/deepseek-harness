@@ -92,7 +92,7 @@ it('loads the shipped Office rows with separately patched settings and authorize
   const entries = new Map([...ctx.loader.entries()].map(entry => [entry.options.id, entry]))
   for (const row of configured) await entries.get(row.id)!.fiber!.await()
   const injections: IndexInjection[] = []
-  ctx.emit('webserver/index-inject', injections)
+  ctx.emit('webserver/index-inject', injections, 'local')
   expect(injections).toEqual([
     { kind: 'global', name: '__DSH_DOCUMENT_PREVIEW_CONFIG__', value: clientConfig },
   ])

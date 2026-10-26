@@ -34,11 +34,21 @@ declare module '@deepseek-ai/cordis' {
      * render and every worker boot-payload request; listeners push their
      * current rows, so a row's data is read fresh at emit time.
      * @param table - Mutable row table; listeners append in activation order.
+     * @param source - Address class of the client the render answers; listeners
+     *   that serve only part of the address space branch on it.
      * @mode emit
      */
-    'webserver/index-inject'(table: IndexInjection[]): void
+    'webserver/index-inject'(table: IndexInjection[], source: IndexRenderSource): void
   }
 }
+
+/**
+ * Address class of the client an index render answers: `local` is loopback or
+ * a peer with no socket address (in-process worker boot payload), `lan` is a
+ * same-site private, unique-local, or link-local address, and `external` is
+ * every other or unparseable address.
+ */
+export type IndexRenderSource = 'local' | 'lan' | 'external'
 
 /** Route match kind: 'exact' matches the pathname verbatim; 'prefix' p matches p and p/<anything>. */
 export type WebRouteKind = 'exact' | 'prefix'
@@ -181,6 +191,23 @@ export function isWildcardHost(host: string): boolean {
 export function isLoopbackHost(host: string): boolean {
   const parsed = parseIpLiteral(host)
   return parsed !== undefined && parsed.range() === 'loopback'
+}
+
+/** ipaddr ranges that identify a same-site client: RFC 1918, IPv6 ULA, and link-local. */
+const LAN_RANGES: ReadonlySet<string> = new Set(['private', 'uniqueLocal', 'linkLocal'])
+
+/**
+ * Classify a client address for index rendering.
+ * @param address - socket remote address text, absent for a peer with no socket.
+ * @returns `local` when absent or loopback, `lan` for private, unique-local, or
+ *   link-local ranges, and `external` for every other or unparseable address.
+ */
+export function indexRenderSource(address: string | undefined): IndexRenderSource {
+  if (address === undefined) return 'local'
+  const parsed = parseIpLiteral(address)
+  if (parsed === undefined) return 'external'
+  const range = parsed.range()
+  return range === 'loopback' ? 'local' : LAN_RANGES.has(range) ? 'lan' : 'external'
 }
 
 /**
@@ -567,11 +594,14 @@ export class WebServer extends Service {
    * Gather the structured injection table: one `webserver/index-inject` emit,
    * every subscriber pushes its current rows. Fresh per call, so subscribers
    * read live state (module graph, theme preference) at emit time.
+   * @param clientAddress - {@link IncomingMessage} remote address text of the
+   *   client being answered, absent for a render with no socket (in-process
+   *   worker boot payload); it selects the {@link IndexRenderSource} listeners see.
    * @returns rows in subscriber activation order.
    */
-  collectIndexInjections(): IndexInjection[] {
+  collectIndexInjections(clientAddress?: string): IndexInjection[] {
     const table: IndexInjection[] = []
-    this.ctx.emit('webserver/index-inject', table)
+    this.ctx.emit('webserver/index-inject', table, indexRenderSource(clientAddress))
     return table
   }
 
@@ -579,10 +609,11 @@ export class WebServer extends Service {
    * Render one index.html body: the structured injection table first, then
    * the raw `tapIndex` transforms over the result.
    * @param html - the raw index.html body.
+   * @param clientAddress - remote address text of the client being answered.
    * @returns the transformed body.
    */
-  renderIndex(html: string): string {
-    return this.applyIndexTaps(renderIndexInjections(html, this.collectIndexInjections()))
+  renderIndex(html: string, clientAddress?: string): string {
+    return this.applyIndexTaps(renderIndexInjections(html, this.collectIndexInjections(clientAddress)))
   }
 }
 

@@ -12,7 +12,7 @@ import {
 /** Collect the injection table the way an index render or boot payload does. */
 function collect(ctx: Context): IndexInjection[] {
   const table: IndexInjection[] = []
-  ctx.emit('webserver/index-inject', table)
+  ctx.emit('webserver/index-inject', table, 'local')
   return table
 }
 

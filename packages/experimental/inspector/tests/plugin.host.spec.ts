@@ -51,7 +51,7 @@ describe('experimental Inspector Host plugin', () => {
     await fiber.await()
 
     const rows: IndexInjection[] = []
-    context.emit('webserver/index-inject', rows)
+    context.emit('webserver/index-inject', rows, 'local')
     const bootstrap = rows.find(row => row.kind === 'global' && row.name === '__DSH_INSPECTOR__')
     expect(bootstrap).toMatchObject({ kind: 'global', name: '__DSH_INSPECTOR__' })
     expect(log).toHaveBeenCalledWith(expect.stringMatching(/^dsh inspector: devtools:\/\//u))
@@ -116,7 +116,7 @@ describe('experimental Inspector Host plugin', () => {
     expect(releaseUpgrade).toHaveBeenCalledOnce()
     expect(rows).toHaveLength(1)
     const afterDispose: IndexInjection[] = []
-    context.emit('webserver/index-inject', afterDispose)
+    context.emit('webserver/index-inject', afterDispose, 'local')
     expect(afterDispose).toEqual([])
     expect((await api.fetch(new Request(`http://localhost${INSPECTOR_BOOTSTRAP_PATH}`), connection.browserPeer)).status).toBe(404)
   })

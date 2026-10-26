@@ -114,11 +114,6 @@ export async function serveStatic(
 export function apply(ctx: Context, config: Config): void {
   const distIndex = config.distIndex
   const distRoot = dirname(distIndex)
-  // Insert after all index transforms so the base precedes every resource reference.
-  const renderIndex = async (): Promise<string> => {
-    const body = ctx.webServer.renderIndex(await readFile(distIndex, 'utf8'))
-    return body.replace(/<head(?:\s[^>]*)?>/i, open => `${open}<base href="./">`)
-  }
   ctx.effect(() => ctx.webServer.registerFallback(async (req, res) => {
     // Non-GET/HEAD without a matching named route is 405 (fallback-only
     // semantics: named routes own their method handling).
@@ -129,6 +124,12 @@ export function apply(ctx: Context, config: Config): void {
     }
     /* v8 ignore next -- node:http always sets url on server requests */
     const rawPath = new URL(req.url ?? '/', 'http://x').pathname
+    // Render per request so injection listeners see this client's address class.
+    // Insert after all index transforms so the base precedes every resource reference.
+    const renderIndex = async (): Promise<string> => {
+      const body = ctx.webServer.renderIndex(await readFile(distIndex, 'utf8'), req.socket.remoteAddress)
+      return body.replace(/<head(?:\s[^>]*)?>/i, open => `${open}<base href="./">`)
+    }
     await serveStatic(
       decodeURIComponent(rawPath),
       res,

@@ -74,7 +74,7 @@ describe('experimental Inspector Host bootstrap route', () => {
     )
     const injected = () => {
       const rows: IndexInjection[] = []
-      context!.emit('webserver/index-inject', rows)
+      context!.emit('webserver/index-inject', rows, 'local')
       return rows.find(row => row.kind === 'global' && row.name === '__DSH_INSPECTOR__')
     }
     return { fiber, bootstrap, injected, register, registerUpgrade, messages, log }

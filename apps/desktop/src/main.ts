@@ -1313,13 +1313,11 @@ async function main(): Promise<void> {
     locale = resolveDesktopStartupLocale(state.localePreference, systemLanguages)
     windowsLanguage = locale.id
     refreshApplicationMenu()
-    if (!enteredWorkspace && needsWelcome({ loggedIn: state.loggedIn, hasApiKey: state.hasApiKey })) {
-      // A later login must retain its own activation policy instead of replaying startup focus.
-      raiseAfterUpdate = false
-      await showWelcome()
-    } else {
-      await enterWorkspace()
-    }
+    // Application launch enters the workspace directly; credentials and account
+    // sign-in are entered from the app itself. The welcome window remains the
+    // entry point whenever the app becomes unauthenticated (sign-out, session
+    // expiry, or a quit cancelled while it was open).
+    await enterWorkspace()
   }
   focusPrimaryWindow = () => {
     if (quitting) return

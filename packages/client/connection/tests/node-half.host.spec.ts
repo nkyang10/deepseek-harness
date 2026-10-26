@@ -300,7 +300,7 @@ describe('connection node half', () => {
     const { ctx, dispose } = await mounted({ recovery: { generationReadyTimeoutMs: 25_000 } })
     try {
       const rows: IndexInjection[] = []
-      ctx.emit('webserver/index-inject', rows)
+      ctx.emit('webserver/index-inject', rows, 'local')
       expect(rows).toEqual([{
         kind: 'global', name: '__DSH_CONNECTION_RECOVERY__', value: {
           backoffBaseMs: 500, backoffFactor: 2, backoffMaxMs: 10_000,
@@ -309,7 +309,7 @@ describe('connection node half', () => {
       }])
       await dispose()
       const after: IndexInjection[] = []
-      ctx.emit('webserver/index-inject', after)
+      ctx.emit('webserver/index-inject', after, 'local')
       expect(after).toEqual([])
     } finally {
       await dispose()

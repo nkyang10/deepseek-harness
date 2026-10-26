@@ -3734,15 +3734,15 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         returns: 'the transformed body.',
       },
       {
-        signature: 'collectIndexInjections(): IndexInjection[]',
+        signature: 'collectIndexInjections(clientAddress?: string): IndexInjection[]',
         description: 'Gather the structured injection table: one `webserver/index-inject` emit, every subscriber pushes its current rows. Fresh per call, so subscribers read live state (module graph, theme preference) at emit time.',
-        parameters: [],
+        parameters: [{ name: 'clientAddress', description: '{@link IncomingMessage} remote address text of the client being answered, absent for a render with no socket (in-process worker boot payload); it selects the {@link IndexRenderSource} listeners see.' }],
         returns: 'rows in subscriber activation order.',
       },
       {
-        signature: 'renderIndex(html: string): string',
+        signature: 'renderIndex(html: string, clientAddress?: string): string',
         description: 'Render one index.html body: the structured injection table first, then the raw `tapIndex` transforms over the result.',
-        parameters: [{ name: 'html', description: 'the raw index.html body.' }],
+        parameters: [{ name: 'html', description: 'the raw index.html body.' }, { name: 'clientAddress', description: 'remote address text of the client being answered.' }],
         returns: 'the transformed body.',
       },
     ],
@@ -4600,10 +4600,10 @@ export const EVENT_API: readonly EventApiEntry[] = [
   {
     name: 'webserver/index-inject',
     mode: 'emit',
-    signature: '\'webserver/index-inject\'(table: IndexInjection[]): void',
+    signature: '\'webserver/index-inject\'(table: IndexInjection[], source: IndexRenderSource): void',
     summary: 'Collect the structured index injection table.',
     description: 'Collect the structured index injection table. Emitted on every index render and every worker boot-payload request; listeners push their current rows, so a row\'s data is read fresh at emit time.',
-    parameters: [{ name: 'table', description: 'Mutable row table; listeners append in activation order.' }],
+    parameters: [{ name: 'table', description: 'Mutable row table; listeners append in activation order.' }, { name: 'source', description: 'Address class of the client the render answers; listeners that serve only part of the address space branch on it.' }],
   },
   {
     name: 'workflow/agent-end',
@@ -5712,6 +5712,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'IndexInjectionPlacement',
     declaration: 'export type IndexInjectionPlacement = \'head\' | \'body\';',
+  },
+  {
+    name: 'IndexRenderSource',
+    declaration: 'export type IndexRenderSource = \'local\' | \'lan\' | \'external\';',
   },
   {
     name: 'InspectOptions',

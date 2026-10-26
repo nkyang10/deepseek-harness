@@ -11,7 +11,7 @@ it('validates positive sequence timing and publishes it through the product page
   try {
     apply(ctx, Config({ stopSequenceMs: 800 }))
     const table: IndexInjection[] = []
-    await ctx.parallel('webserver/index-inject', table)
+    await ctx.parallel('webserver/index-inject', table, 'local')
     expect(table).toEqual([{ kind: 'global', name: '__DSH_SHORTCUTS_CONFIG__', value: { stopSequenceMs: 800 } }])
   } finally { await ctx.fiber.dispose() }
 })

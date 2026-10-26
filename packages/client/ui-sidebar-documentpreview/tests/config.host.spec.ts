@@ -22,10 +22,10 @@ it('embeds YAML cache settings in browser pages and withdraws them on disposal',
   const fiber = ctx.plugin(host, config)
   await fiber.await()
   const rows: IndexInjection[] = []
-  ctx.emit('webserver/index-inject', rows)
+  ctx.emit('webserver/index-inject', rows, 'local')
   expect(rows).toEqual([{ kind: 'global', name: '__DSH_DOCUMENT_PREVIEW_CONFIG__', value: config }])
   await fiber.dispose()
   const after: IndexInjection[] = []
-  ctx.emit('webserver/index-inject', after)
+  ctx.emit('webserver/index-inject', after, 'local')
   expect(after).toEqual([])
 })

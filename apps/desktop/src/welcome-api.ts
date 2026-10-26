@@ -59,14 +59,15 @@ export type WelcomeApi = DesktopLocale & WelcomeOperations & {
   onAccountState(listener: (state: AccountView) => void): () => void
 }
 
-/** Authentication facts supplied at cold start or after a completed sign-out. */
+/** Account and API-key availability read when the app may have become unauthenticated. */
 export interface WelcomeAuthentication {
   readonly loggedIn: boolean
   readonly hasApiKey: boolean
 }
 
 /**
- * Decide whether a startup or sign-out requires the welcome entry.
+ * Decide whether a sign-out or expired session requires the welcome entry.
+ * Application launch never consults this: it enters the workspace directly.
  * @param authentication - current account and independently stored API-key facts.
  * @returns true only when neither authentication route is configured.
  */

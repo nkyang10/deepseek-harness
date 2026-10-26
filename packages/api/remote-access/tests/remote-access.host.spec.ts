@@ -404,7 +404,7 @@ describe('first snapshots', () => {
     const { ctx } = await setup()
     const render = (): IndexInjection[] => {
       const table: IndexInjection[] = []
-      ctx.emit('webserver/index-inject', table)
+      ctx.emit('webserver/index-inject', table, 'local')
       return table
     }
     expect(render()).toEqual([])

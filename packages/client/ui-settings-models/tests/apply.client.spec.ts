@@ -74,7 +74,7 @@ describe('ui-settings-models apply', () => {
       const host = ctx.plugin(hostPlugin, { credentialOnboarding: false })
       await host.await()
       const rows: IndexInjection[] = []
-      ctx.emit('webserver/index-inject', rows)
+      ctx.emit('webserver/index-inject', rows, 'local')
       expect(rows).toEqual([{ kind: 'global', name: ONBOARDING_CONFIG_GLOBAL, value: { credentialOnboarding: false } }])
       for (const row of rows) if (row.kind === 'global') vi.stubGlobal(row.name, row.value)
       const plugin = ctx.plugin({ inject: [...inject], apply })
@@ -87,8 +87,29 @@ describe('ui-settings-models apply', () => {
       expect(slots.entries('settings.onboarding')).toEqual([])
       await host.dispose()
       const after: IndexInjection[] = []
-      ctx.emit('webserver/index-inject', after)
+      ctx.emit('webserver/index-inject', after, 'local')
       expect(after).toEqual([])
+    } finally {
+      await ctx.fiber.dispose()
+    }
+  })
+
+  it('suppresses the automatic credential step for LAN clients', async () => {
+    const { ctx } = await bench()
+    try {
+      const host = ctx.plugin(hostPlugin, { credentialOnboarding: true })
+      await host.await()
+      const published = (source: 'local' | 'lan' | 'external'): unknown => {
+        const rows: IndexInjection[] = []
+        ctx.emit('webserver/index-inject', rows, source)
+        const [row] = rows
+        if (row?.kind !== 'global') throw new Error('host pushed no global bootstrap row')
+        return row.value
+      }
+      expect(published('local')).toEqual({ credentialOnboarding: true })
+      expect(published('lan')).toEqual({ credentialOnboarding: false })
+      expect(published('external')).toEqual({ credentialOnboarding: true })
+      await host.dispose()
     } finally {
       await ctx.fiber.dispose()
     }

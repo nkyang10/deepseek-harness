@@ -81,7 +81,7 @@ interface TlsConfig {
 
 ## 服务
 
-`WebServer`（`ctx.webServer`）在激活时立即监听；监听失败（EADDRINUSE 等）会使初始化被拒绝，启动进程会报告失败的 fiber。`tls` 证书对在监听器绑定前读取一次；文件不可读、为空或二者不匹配时同样会使初始化被拒绝，而不是回退到 HTTP。`register(route)` 添加一条具名路由并返回其 disposer；重复的 `(kind, path)` 抛出异常，因为路由模式是组合层约定，冲突即配置错误。Gzip 在服务器内部包装符合条件且基于 socket 的响应，因此 route handler 继续直接持有 `ServerResponse`，服务也不新增响应写出 API。已有内容编码、`Cache-Control: no-transform`、范围响应、SSE、ZIP 与打包后的 `.gz` Worker 镜像均保持 identity 响应。`collectIndexInjections()` 经一次 `webserver/index-inject` emit 收集结构化 `IndexInjection` 行，`renderIndex(html)` 把它们渲染进成功的根路径和配置 index 响应，随后再按注册顺序应用原始的 `tapIndex(transform)` 逃生口转换；[dsh-client-modules](../../packages/client/modules) 以启动 manifest（元数据清单）行回应该事件。`port` 读取监听端口，包括 `config.port` 为 0 时操作系统分配的端口，`protocol` 则报告监听器提供的协议（`http:` 或 `https:`）。
+`WebServer`（`ctx.webServer`）在激活时立即监听；监听失败（EADDRINUSE 等）会使初始化被拒绝，启动进程会报告失败的 fiber。`tls` 证书对在监听器绑定前读取一次；文件不可读、为空或二者不匹配时同样会使初始化被拒绝，而不是回退到 HTTP。`register(route)` 添加一条具名路由并返回其 disposer；重复的 `(kind, path)` 抛出异常，因为路由模式是组合层约定，冲突即配置错误。Gzip 在服务器内部包装符合条件且基于 socket 的响应，因此 route handler 继续直接持有 `ServerResponse`，服务也不新增响应写出 API。已有内容编码、`Cache-Control: no-transform`、范围响应、SSE、ZIP 与打包后的 `.gz` Worker 镜像均保持 identity 响应。`collectIndexInjections(clientAddress?)` 经一次 `webserver/index-inject` emit 收集结构化 `IndexInjection` 行，`renderIndex(html, clientAddress?)` 把它们渲染进成功的根路径和配置 index 响应，随后再按注册顺序应用原始的 `tapIndex(transform)` 逃生口转换；可选的远端地址文本把被应答的客户端分类为 `IndexRenderSource`（`local` 为回环或无 socket，`lan` 为私有、唯一本地或链路本地地址，其余为 `external`）交给监听者；[dsh-client-modules](../../packages/client/modules) 以启动 manifest（元数据清单）行回应该事件。`port` 读取监听端口，包括 `config.port` 为 0 时操作系统分配的端口，`protocol` 则报告监听器提供的协议（`http:` 或 `https:`）。
 
 处理过程中抛出异常的请求（畸形的 % 转义撞上 `decodeURIComponent`、客户端在请求体中途断开）会记录为警告并应答 400（响应头已发出时则销毁 socket），绝不导致进程退出。dispose（资源释放）把 `close()` 与 `closeAllConnections()` 配对使用，因为处理器可能像 SSE（Server-Sent Events）那样保持响应打开，而这类连接永远不会自行结束；没有强制关闭，拆卸就会挂起。TLS socket 只有完成握手后才计入连接，因此服务器会把原始 TLS socket 与升级后的 socket 一并跟踪，并在 dispose 时销毁两者。该包从不打印输出：URL 行归 shell 所有。逐包运维细节（含开发模式的 bundle 监视流水线）留在 [README](../../packages/host/webserver/README.zh.md) 中。
 
@@ -261,17 +261,21 @@ applyIndexTaps(html: string): string
  * Gather the structured injection table: one `webserver/index-inject` emit,
  * every subscriber pushes its current rows. Fresh per call, so subscribers
  * read live state (module graph, theme preference) at emit time.
+ * @param clientAddress - {@link IncomingMessage} remote address text of the
+ *   client being answered, absent for a render with no socket (in-process
+ *   worker boot payload); it selects the {@link IndexRenderSource} listeners see.
  * @returns rows in subscriber activation order.
  */
-collectIndexInjections(): IndexInjection[]
+collectIndexInjections(clientAddress?: string): IndexInjection[]
 
 /**
  * Render one index.html body: the structured injection table first, then
  * the raw `tapIndex` transforms over the result.
  * @param html - the raw index.html body.
+ * @param clientAddress - remote address text of the client being answered.
  * @returns the transformed body.
  */
-renderIndex(html: string): string
+renderIndex(html: string, clientAddress?: string): string
 ```
 
 Source: [`packages/host/webserver/src/index.ts`](../../packages/host/webserver/src/index.ts)
@@ -316,9 +320,11 @@ Collect the structured index injection table. Emitted on every index render and 
  * render and every worker boot-payload request; listeners push their
  * current rows, so a row's data is read fresh at emit time.
  * @param table - Mutable row table; listeners append in activation order.
+ * @param source - Address class of the client the render answers; listeners
+ *   that serve only part of the address space branch on it.
  * @mode emit
  */
-'webserver/index-inject'(table: IndexInjection[]): void
+'webserver/index-inject'(table: IndexInjection[], source: IndexRenderSource): void
 ```
 
 Source: [`packages/host/webserver/src/index.ts`](../../packages/host/webserver/src/index.ts)

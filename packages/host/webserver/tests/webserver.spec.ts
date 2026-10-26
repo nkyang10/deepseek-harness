@@ -21,7 +21,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { Context, FiberState } from '@deepseek-ai/cordis'
 import Loader from '@deepseek-ai/cordis-plugin-loader'
 import Include from '@deepseek-ai/cordis-plugin-include'
-import HttpServer, { bindUrlHost, isLoopbackHost, normalizeBindAddress, renderIndexInjections, type TlsConfig } from '../src/index.ts'
+import HttpServer, { bindUrlHost, indexRenderSource, isLoopbackHost, normalizeBindAddress, renderIndexInjections, type IndexRenderSource, type TlsConfig } from '../src/index.ts'
 import { materializeTlsFixture, type TlsFixture } from './tls-fixture.ts'
 
 /** One-shot barrier for disposal overlapping a pending PEM read. */
@@ -566,6 +566,37 @@ describe('real Loader composition', () => {
       { kind: 'script', placement: 'body', text: 'B' },
     ])).toBe('<script>H</script><main>x</main><script>B</script>'
       + '<script>(globalThis.__DSH_BOOT_READY__ ??= Promise.withResolvers()).resolve()</script>')
+  })
+
+  it('classifies the index render source from the client address', () => {
+    expect(indexRenderSource(undefined)).toBe('local')
+    expect(indexRenderSource('127.0.0.1')).toBe('local')
+    expect(indexRenderSource('::1')).toBe('local')
+    expect(indexRenderSource('::ffff:127.0.0.1')).toBe('local')
+    expect(indexRenderSource('10.1.2.3')).toBe('lan')
+    expect(indexRenderSource('172.20.0.9')).toBe('lan')
+    expect(indexRenderSource('192.168.1.40')).toBe('lan')
+    expect(indexRenderSource('::ffff:192.168.1.40')).toBe('lan')
+    expect(indexRenderSource('fd12:3456::78')).toBe('lan')
+    expect(indexRenderSource('fe80::1')).toBe('lan')
+    expect(indexRenderSource('fe80::1%en0')).toBe('lan')
+    expect(indexRenderSource('169.254.10.20')).toBe('lan')
+    expect(indexRenderSource('8.8.8.8')).toBe('external')
+    expect(indexRenderSource('2001:4860:4860::8888')).toBe('external')
+    expect(indexRenderSource('not-an-address')).toBe('external')
+    expect(indexRenderSource('')).toBe('external')
+  })
+
+  it('emits the answered client address class to index-inject listeners', async () => {
+    const loaded = await loadComposition()
+    const seen: IndexRenderSource[] = []
+    loaded.on('webserver/index-inject', (_table, source) => {
+      seen.push(source)
+    })
+    loaded.webServer.renderIndex('<head></head><body></body>')
+    loaded.webServer.renderIndex('<head></head><body></body>', '192.168.4.9')
+    loaded.webServer.renderIndex('<head></head><body></body>', '203.0.113.9')
+    expect(seen).toEqual(['local', 'lan', 'external'])
   })
 
   it('serves HTTPS to a verifying client and reports the https protocol', { timeout: 60_000 }, async () => {

@@ -81,7 +81,7 @@ No composition can bind every interface at once: the unspecified address is reje
 
 ## The service
 
-`WebServer` (`ctx.webServer`) listens immediately on activation; a listen failure (EADDRINUSE…) rejects initialization, and the boot process reports the failed fiber. The `tls` pair is read once before the listener binds, and an unreadable, empty, or mismatched pair rejects initialization the same way instead of falling back to HTTP. `register(route)` adds one named route and returns its disposer; a duplicate `(kind, path)` throws because route patterns are a composition-level contract and a collision is a misconfiguration. Gzip wraps eligible socket-backed responses inside the server, so route handlers retain direct `ServerResponse` ownership and no response-writing API is added to the service. Existing content encodings, `Cache-Control: no-transform`, ranges, SSE, ZIP, and the packaged `.gz` Worker image remain identity responses. `collectIndexInjections()` gathers structured `IndexInjection` rows over one `webserver/index-inject` emit, and `renderIndex(html)` renders them into successful root and configured index responses before applying the raw `tapIndex(transform)` escape-hatch transforms in registration order; [dsh-client-modules](../../packages/client/modules) answers the event with the boot manifest rows. `port` reads the listening port, including the port assigned by the OS when `config.port` is 0, and `protocol` reports the scheme the listener serves (`http:` or `https:`).
+`WebServer` (`ctx.webServer`) listens immediately on activation; a listen failure (EADDRINUSE…) rejects initialization, and the boot process reports the failed fiber. The `tls` pair is read once before the listener binds, and an unreadable, empty, or mismatched pair rejects initialization the same way instead of falling back to HTTP. `register(route)` adds one named route and returns its disposer; a duplicate `(kind, path)` throws because route patterns are a composition-level contract and a collision is a misconfiguration. Gzip wraps eligible socket-backed responses inside the server, so route handlers retain direct `ServerResponse` ownership and no response-writing API is added to the service. Existing content encodings, `Cache-Control: no-transform`, ranges, SSE, ZIP, and the packaged `.gz` Worker image remain identity responses. `collectIndexInjections(clientAddress?)` gathers structured `IndexInjection` rows over one `webserver/index-inject` emit, and `renderIndex(html, clientAddress?)` renders them into successful root and configured index responses before applying the raw `tapIndex(transform)` escape-hatch transforms in registration order; the optional remote-address text classifies the answered client for listeners as an `IndexRenderSource` (`local` loopback or no socket, `lan` private/unique-local/link-local, `external` otherwise). [dsh-client-modules](../../packages/client/modules) answers the event with the boot manifest rows. `port` reads the listening port, including the port assigned by the OS when `config.port` is 0, and `protocol` reports the scheme the listener serves (`http:` or `https:`).
 
 A request whose handling throws (a malformed %-escape hitting `decodeURIComponent`, a client dropping mid-body) is logged as a warning and answered 400 — or the socket destroyed when headers are already out — never a process exit. Disposal pairs `close()` with `closeAllConnections()` because a handler may hold its response open (SSE) and such connections never end on their own; without the force-close, teardown would hang. A TLS socket counts as a connection only after its handshake, so the server tracks raw TLS sockets beside upgraded ones and destroys both at disposal. The package never prints: the URL line belongs to the shell. Per-package operational detail, including the dev-mode bundle watch pipeline, stays in the [README](../../packages/host/webserver/README.md).
 
@@ -261,17 +261,21 @@ applyIndexTaps(html: string): string
  * Gather the structured injection table: one `webserver/index-inject` emit,
  * every subscriber pushes its current rows. Fresh per call, so subscribers
  * read live state (module graph, theme preference) at emit time.
+ * @param clientAddress - {@link IncomingMessage} remote address text of the
+ *   client being answered, absent for a render with no socket (in-process
+ *   worker boot payload); it selects the {@link IndexRenderSource} listeners see.
  * @returns rows in subscriber activation order.
  */
-collectIndexInjections(): IndexInjection[]
+collectIndexInjections(clientAddress?: string): IndexInjection[]
 
 /**
  * Render one index.html body: the structured injection table first, then
  * the raw `tapIndex` transforms over the result.
  * @param html - the raw index.html body.
+ * @param clientAddress - remote address text of the client being answered.
  * @returns the transformed body.
  */
-renderIndex(html: string): string
+renderIndex(html: string, clientAddress?: string): string
 ```
 
 Source: [`packages/host/webserver/src/index.ts`](../../packages/host/webserver/src/index.ts)
@@ -316,9 +320,11 @@ Collect the structured index injection table. Emitted on every index render and 
  * render and every worker boot-payload request; listeners push their
  * current rows, so a row's data is read fresh at emit time.
  * @param table - Mutable row table; listeners append in activation order.
+ * @param source - Address class of the client the render answers; listeners
+ *   that serve only part of the address space branch on it.
  * @mode emit
  */
-'webserver/index-inject'(table: IndexInjection[]): void
+'webserver/index-inject'(table: IndexInjection[], source: IndexRenderSource): void
 ```
 
 Source: [`packages/host/webserver/src/index.ts`](../../packages/host/webserver/src/index.ts)

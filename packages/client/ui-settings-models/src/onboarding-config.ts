@@ -4,7 +4,11 @@ import z from '@deepseek-ai/schemastery'
 
 /** Onboarding options after schema defaults are applied. */
 export interface Config {
-  /** Offer the browser API-key step when no native shell owns credential onboarding. */
+  /**
+   * Offer the browser API-key step when no native shell owns credential
+   * onboarding. Pages rendered for a LAN client never receive the automatic
+   * step; credential entry there stays available from the Models page.
+   */
   credentialOnboarding: boolean
 }
 

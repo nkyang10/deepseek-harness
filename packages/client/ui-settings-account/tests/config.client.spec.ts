@@ -11,14 +11,14 @@ it('injects configured contact options and removes the listener on disposal', as
   const config: Config = Config({ contactSource: 'harness', bonusAckRetryDelayMs: 25, bonusAckRetryMaxDelayMs: 100 })
   await ctx.plugin({ Config, apply }, { contactSource: 'harness', bonusAckRetryDelayMs: 25, bonusAckRetryMaxDelayMs: 100 })
   const table: IndexInjection[] = []
-  ctx.emit('webserver/index-inject', table)
+  ctx.emit('webserver/index-inject', table, 'local')
   expect(table).toEqual([{ kind: 'global', name: CONTACT_CONFIG_GLOBAL, value: {
     contactFormUrl: config.contactFormUrl, contactSource: config.contactSource,
     bonusAckRetryDelayMs: 25, bonusAckRetryMaxDelayMs: 100,
   } }])
   await ctx.fiber.dispose()
   table.length = 0
-  ctx.emit('webserver/index-inject', table)
+  ctx.emit('webserver/index-inject', table, 'local')
   expect(table).toEqual([])
 })
 
