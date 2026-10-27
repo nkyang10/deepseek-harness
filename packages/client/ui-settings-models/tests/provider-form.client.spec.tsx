@@ -861,6 +861,66 @@ describe('provider rows', () => {
   })
 })
 
+describe('OpenCode import entry', () => {
+  it('offers the import beside both existing add modes', async () => {
+    await mountSection()
+    fireEvent.click(screen.getByRole('button', { name: en.add }))
+
+    expect(screen.getByRole('tab', { name: en.addCatalog })).toBeTruthy()
+    expect(screen.getByRole('tab', { name: en.addCustom })).toBeTruthy()
+    expect(screen.getByRole('tab', { name: en.addImport })).toBeTruthy()
+
+    fireEvent.click(screen.getByRole('tab', { name: en.addImport }))
+    expect(screen.getByLabelText(en.importJsonLabel)).toBeTruthy()
+    expect(screen.getByText(en.addImportHint)).toBeTruthy()
+  })
+
+  it('writes an imported provider and dismisses the card', async () => {
+    const { mutate } = await mountSection()
+    fireEvent.click(screen.getByRole('button', { name: en.add }))
+    fireEvent.click(screen.getByRole('tab', { name: en.addImport }))
+    fireEvent.change(screen.getByLabelText(en.importJsonLabel), {
+      target: {
+        value: JSON.stringify({
+          provider: {
+            acme: {
+              npm: '@ai-sdk/openai',
+              options: { baseURL: 'https://acme.test/v1' },
+              models: { large: {} },
+            },
+          },
+        }),
+      },
+    })
+    fireEvent.click(screen.getByRole('button', { name: en.import }))
+
+    expect(await screen.findByText(en.importedProviders.replace('{count}', '1'))).toBeTruthy()
+    expect(firstMutate(mutate).ops).toEqual([{
+      op: 'set',
+      path: ['providers', 'acme'],
+      value: {
+        api: 'openai-completions',
+        baseURL: 'https://acme.test/v1',
+        models: [{ id: 'large' }],
+      },
+    }])
+    fireEvent.click(screen.getByRole('button', { name: en.close }))
+    await waitFor(() => { expect(screen.getByRole('button', { name: en.add })).toBeTruthy() })
+    expect(screen.queryByLabelText(en.importJsonLabel)).toBeNull()
+  })
+
+  it('dismisses an untouched import draft from Cancel', async () => {
+    const { mutate } = await mountSection()
+    fireEvent.click(screen.getByRole('button', { name: en.add }))
+    fireEvent.click(screen.getByRole('tab', { name: en.addImport }))
+    fireEvent.click(screen.getByRole('button', { name: en.cancel }))
+
+    expect(screen.getByRole('button', { name: en.add })).toBeTruthy()
+    expect(screen.queryByLabelText(en.importJsonLabel)).toBeNull()
+    expect(mutate).not.toHaveBeenCalled()
+  })
+})
+
 describe('hand-declared providers', () => {
   function mountCard(
     overrides: Partial<Parameters<typeof CustomProviderCard>[0]> = {},

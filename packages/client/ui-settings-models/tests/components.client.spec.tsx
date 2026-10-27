@@ -1814,12 +1814,13 @@ describe('ModelsSection', () => {
     expect(screen.getByRole('textbox', { name: en.customRoute })).toBeTruthy()
   })
 
-  it('shows the custom form alone when no directory row can be adopted', async () => {
+  it('keeps custom selected when no directory row can be adopted', async () => {
     const scripted = scriptedFace()
     scripted.face.llm.listConfigurableProviders.mockResolvedValue(remoteOk([]))
     await mountFace(scripted)
     fireEvent.click(screen.getByRole('button', { name: en.add }))
-    expect(screen.queryByRole('tablist')).toBeNull()
+    expect(screen.getByRole('tab', { name: en.addCustom }).getAttribute('aria-selected')).toBe('true')
+    expect(screen.getByRole('tab', { name: en.addImport })).toBeTruthy()
     expect(screen.queryByRole('combobox', { name: en.provider })).toBeNull()
     expect(screen.getByRole('textbox', { name: en.customRoute })).toBeTruthy()
   })
@@ -1845,11 +1846,12 @@ describe('ModelsSection', () => {
     const { face, controller } = await mountSection()
     fireEvent.click(screen.getByRole('button', { name: en.add }))
     expect(screen.getByRole('combobox', { name: en.provider })).toBeTruthy()
-    // The directory empties while the card is open: the only mode left is the
-    // custom one, whose panel was never visited.
+    // The directory empties while the card is open: custom and import remain,
+    // and the fallback shows the custom panel even though it was never visited.
     face.llm.listConfigurableProviders.mockResolvedValue(remoteOk([]))
     await act(async () => { await controller.load() })
-    expect(screen.queryByRole('tablist')).toBeNull()
+    expect(screen.getByRole('tab', { name: en.addCustom }).getAttribute('aria-selected')).toBe('true')
+    expect(screen.getByRole('tab', { name: en.addImport })).toBeTruthy()
     expect(screen.getByRole('textbox', { name: en.customRoute })).toBeTruthy()
   })
 
@@ -1969,15 +1971,20 @@ describe('ModelsSection', () => {
     expect(customPanel.getAttribute('aria-labelledby')).toBe(customTab.id)
   })
 
-  it('titles a single-mode card with its mode instead of leaving an orphan tabpanel', async () => {
+  it('titles a single-mode catalog card instead of leaving an orphan tabpanel', async () => {
     const scripted = scriptedFace()
-    scripted.face.llm.listConfigurableProviders.mockResolvedValue(remoteOk([]))
+    scripted.face.settings.describe.mockResolvedValue(remoteOk({
+      writable: true,
+      hasDocument: false,
+      namespaces: wireNamespaces().filter(namespace => namespace.ns !== 'llm-pi-ai'),
+    }))
     await mountFace(scripted)
     fireEvent.click(screen.getByRole('button', { name: en.add }))
     expect(screen.queryByRole('tablist')).toBeNull()
     expect(screen.queryByRole('tabpanel')).toBeNull()
-    expect(screen.getByText(en.addCustom)).toBeTruthy()
-    expect(screen.getByRole('textbox', { name: en.customRoute })).toBeTruthy()
+    expect(screen.getByText(en.addCatalog)).toBeTruthy()
+    expect(screen.getByRole('combobox', { name: en.provider })).toBeTruthy()
+    expect(screen.queryByRole('textbox', { name: en.customRoute })).toBeNull()
   })
 
   it('explains a locked mode through its hover title', async () => {
@@ -1989,6 +1996,7 @@ describe('ModelsSection', () => {
     fireEvent.click(screen.getByRole('button', { name: en.add }))
     expect(screen.getByRole('tab', { name: en.addCatalog }).getAttribute('title')).toBe(en.addCatalogExhausted)
     expect(screen.getByRole('tab', { name: en.addCustom }).getAttribute('title')).toBeNull()
+    expect(screen.getByRole('tab', { name: en.addImport }).getAttribute('title')).toBeNull()
   })
 
   it('explains a mode with no protocol to declare through its hover title', async () => {
@@ -2003,6 +2011,7 @@ describe('ModelsSection', () => {
     await mountFace(scripted)
     fireEvent.click(screen.getByRole('button', { name: en.add }))
     expect(screen.getByRole('tab', { name: en.addCustom }).getAttribute('title')).toBe(en.addCustomUnavailable)
+    expect(screen.getByRole('tab', { name: en.addImport }).getAttribute('title')).toBe(en.addImportUnavailable)
     expect(screen.getByRole('tab', { name: en.addCatalog }).getAttribute('title')).toBeNull()
   })
 

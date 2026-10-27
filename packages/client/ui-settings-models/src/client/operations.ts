@@ -30,6 +30,15 @@ export type ModelDiscoveryOutcome =
   /** The interrogation was refused, with the Host's own diagnostic. */
   | { readonly kind: 'refused'; readonly message: string }
 
+/** What one default OpenCode config read answered. */
+export type OpenCodeConfigReadOutcome =
+  /** The Host found and read a config file. */
+  | { readonly kind: 'found'; readonly path: string; readonly content: string }
+  /** The read was refused, with the Host's own diagnostic. */
+  | { readonly kind: 'refused'; readonly message: string }
+  /** This Host serves no OpenCode config namespace. */
+  | { readonly kind: 'unavailable' }
+
 /** The Host operations the Models page and its cards invoke. */
 export interface ModelsOperations {
   /**
@@ -65,6 +74,11 @@ export interface ModelsOperations {
    * @returns the candidates, or the refusal.
    */
   discoverModels(settingsNs: string, request: LlmModelDiscoveryRequest): Promise<ModelDiscoveryOutcome>
+  /**
+   * Read the Host's default OpenCode configuration file.
+   * @returns the file path and contents, or the refusal diagnostic.
+   */
+  readOpencodeConfig(): Promise<OpenCodeConfigReadOutcome>
 }
 
 /**
@@ -94,6 +108,12 @@ export function createModelsOperations(ctx: ClientContext): ModelsOperations {
       return response.ok
         ? { kind: 'found', models: response.value }
         : { kind: 'refused', message: response.error.message }
+    },
+    readOpencodeConfig: async () => {
+      const result = await ctx.remote.opencodeConfig.readDefault()
+      if (result.ok) return { kind: 'found', path: result.value.path, content: result.value.content }
+      if (result.error.code === 'opencode-config/unavailable') return { kind: 'unavailable' }
+      return { kind: 'refused', message: result.error.message }
     },
   }
 }

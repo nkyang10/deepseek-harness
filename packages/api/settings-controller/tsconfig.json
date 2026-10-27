@@ -21,6 +21,9 @@
       "path": "../../credentials/credentials"
     },
     {
+      "path": "../../fs/fs"
+    },
+    {
       "path": "../../core/session"
     },
     {

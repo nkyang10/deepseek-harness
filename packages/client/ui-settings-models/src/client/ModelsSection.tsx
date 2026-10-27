@@ -8,8 +8,9 @@
  * the first-run posture — no provider on the page can serve requests yet — and
  * only until the user closes that card. The add flow is one card behind one
  * button: a mode switch chooses between adopting a dormant directory provider
- * (the catalog select over the provider editor) and declaring a custom model
- * API (the create form). A panel mounts the first time its mode is shown and
+ * (the catalog select over the provider editor), declaring a custom model API
+ * (the create form), and importing an OpenCode configuration (the paste card).
+ * A panel mounts the first time its mode is shown and
  * stays mounted, hidden, while the card is open and its mode stays offered,
  * so switching modes discards neither draft and an unvisited mode costs
  * nothing; the switch holds still while either panel has a write or an
@@ -29,6 +30,7 @@ import type { LlmNativeAuth, SettingsNamespaceView } from '@deepseek-ai/dsh-api-
 // Type-only: pulls this package's SlotMap merge (the two Models child slots).
 import type {} from './slot-contract.ts'
 import { CustomProviderCard } from './CustomProviderCard.tsx'
+import { OpencodeImportCard } from './OpencodeImportCard.tsx'
 import { deriveKeyRef, protocolChoices, providerUsable, reasoningLevelChoices } from './store.ts'
 import type { ModelsSettingsStore, ProviderRow } from './store.ts'
 import type { ModelsOperations } from './operations.ts'
@@ -54,10 +56,32 @@ export interface ModelsSectionInjected {
 }
 
 /**
- * The two ways the add card gains a provider: adopt a directory row the
- * adapter already knows, or declare a route it does not.
+ * The three ways the add card gains a provider: adopt a directory row the
+ * adapter already knows, declare a route it does not, or import OpenCode's
+ * provider map.
  */
-type AddMode = 'catalog' | 'custom'
+type AddMode = 'catalog' | 'custom' | 'opencode'
+
+/** The switch label for each add mode. */
+const MODE_LABEL = {
+  catalog: 'addCatalog',
+  custom: 'addCustom',
+  opencode: 'addImport',
+} as const satisfies Record<AddMode, keyof typeof en>
+
+/** The one-line purpose shown beneath the switch for each add mode. */
+const MODE_HINT = {
+  catalog: 'addCatalogHint',
+  custom: 'addCustomHint',
+  opencode: 'addImportHint',
+} as const satisfies Record<AddMode, keyof typeof en>
+
+/** The reason a mode cannot currently add anything, shown as its option title. */
+const MODE_UNAVAILABLE = {
+  catalog: 'addCatalogExhausted',
+  custom: 'addCustomUnavailable',
+  opencode: 'addImportUnavailable',
+} as const satisfies Record<AddMode, keyof typeof en>
 
 /** The child slots this section declares and dispatches (see ./slot-contract.ts). */
 type ModelsChildSlots = 'settings.models.provider-card' | 'settings.models.footer'
@@ -261,6 +285,7 @@ function Loaded({ injected, renderSlot }: { injected: ModelsSectionFace; renderS
   /** Whether each add panel has a write or an interrogation in flight. */
   const [catalogBusy, setCatalogBusy] = useState(false)
   const [customBusy, setCustomBusy] = useState(false)
+  const [importBusy, setImportBusy] = useState(false)
   /** Base of the add card's tab and panel ids. */
   const addId = useId()
   const [deleteTarget, setDeleteTarget] = useState<EditorTarget | undefined>(undefined)
@@ -288,6 +313,7 @@ function Loaded({ injected, renderSlot }: { injected: ModelsSectionFace; renderS
     setAddOpen(false)
     setCatalogBusy(false)
     setCustomBusy(false)
+    setImportBusy(false)
   }
 
   const closeEditor = (changed: boolean, target: ProviderIdentity): void => {
@@ -378,19 +404,36 @@ function Loaded({ injected, renderSlot }: { injected: ModelsSectionFace; renderS
   const protocols = protocolChoices(piAi, schema)
   const reasoningLevels = reasoningLevelChoices(piAi, schema)
   // Each mode is offered while its namespace is mounted and enabled while it
-  // has something to offer; the card shows the chosen mode where both are
-  // offered, else the only one there is. A mode's panel is mounted while it is
-  // the shown mode or has been shown since the card opened — derived, so a
+  // has something to offer; the card shows the chosen mode where more than one
+  // is offered, else the only one there is. A mode's panel is mounted while it
+  // is the shown mode or has been shown since the card opened — derived, so a
   // refresh that changes which modes are offered can never leave the card
   // without a panel.
   const catalogOffered = configurable.length > 0
   const catalogEnabled = addable.length > 0
   const customOffered = piAi !== undefined
   const customEnabled = protocols.length > 0
-  const bothOffered = catalogOffered && customOffered
-  const mode: AddMode = bothOffered ? addMode : customOffered ? 'custom' : 'catalog'
+  const importOffered = piAi !== undefined
+  const importEnabled = protocols.length > 0
+  const offered: AddMode[] = []
+  if (catalogOffered) offered.push('catalog')
+  if (customOffered) offered.push('custom')
+  if (importOffered) offered.push('opencode')
+  const enabled: Readonly<Record<AddMode, boolean>> = {
+    catalog: catalogEnabled,
+    custom: customEnabled,
+    opencode: importEnabled,
+  }
+  const modeSwitchOffered = offered.length > 1
+  const mode: AddMode = offered.includes(addMode) ? addMode : offered[0] ?? 'catalog'
   const mounted = (candidate: AddMode): boolean => mode === candidate || visited.has(candidate)
-  const switchLocked = catalogBusy || customBusy
+  const switchLocked = catalogBusy || customBusy || importBusy
+  // Routes the installed adapter ships may leave their catalog endpoint and
+  // models unset in an imported profile; a hand-declared route carries
+  // `declared` and must name both.
+  const shipped = state.rows
+    .filter(row => row.entry.declared !== true && row.entry.provider !== 'deepseek-account')
+    .map(row => row.entry.provider)
   // The catalog draft: the row the user chose, kept through a refresh that
   // adopts or withdraws it elsewhere so a typed key is never discarded, for as
   // long as its namespace can still take the write; else the first row still
@@ -570,27 +613,19 @@ function Loaded({ injected, renderSlot }: { injected: ModelsSectionFace; renderS
           ? (
             <div className={styles['addCard']}>
               <div className={styles['addModes']}>
-                {bothOffered
+                {modeSwitchOffered
                   ? (
                     <SegmentedControl
                       id={addId}
                       label={t('addMode')}
                       value={mode}
                       disabled={switchLocked}
-                      options={[
-                        {
-                          value: 'catalog',
-                          label: t('addCatalog'),
-                          disabled: !catalogEnabled,
-                          ...catalogEnabled ? {} : { title: t('addCatalogExhausted') },
-                        },
-                        {
-                          value: 'custom',
-                          label: t('addCustom'),
-                          disabled: !customEnabled,
-                          ...customEnabled ? {} : { title: t('addCustomUnavailable') },
-                        },
-                      ]}
+                      options={offered.map(candidate => ({
+                        value: candidate,
+                        label: t(MODE_LABEL[candidate]),
+                        disabled: !enabled[candidate],
+                        ...enabled[candidate] ? {} : { title: t(MODE_UNAVAILABLE[candidate]) },
+                      }))}
                       onChange={(next) => {
                         setAddMode(next)
                         setVisited(previous => new Set([...previous, next]))
@@ -601,18 +636,16 @@ function Loaded({ injected, renderSlot }: { injected: ModelsSectionFace; renderS
                     // One mode alone has no switch to name it, so the card
                     // carries the mode as its title instead.
                     <div className={styles['editorHeader']}>
-                      <span className={styles['editorTitle']}>{t(mode === 'catalog' ? 'addCatalog' : 'addCustom')}</span>
+                      <span className={styles['editorTitle']}>{t(MODE_LABEL[mode])}</span>
                     </div>
                   )}
-                <p className={styles['advancedHint']}>
-                  {t(mode === 'catalog' ? 'addCatalogHint' : 'addCustomHint')}
-                </p>
+                <p className={styles['advancedHint']}>{t(MODE_HINT[mode])}</p>
               </div>
               {mounted('catalog') && draft !== undefined
                 ? (
                   <div
                     id={`${addId}-catalog-panel`}
-                    {...bothOffered ? { role: 'tabpanel', 'aria-labelledby': `${addId}-catalog` } : {}}
+                    {...modeSwitchOffered ? { role: 'tabpanel', 'aria-labelledby': `${addId}-catalog` } : {}}
                     hidden={mode !== 'catalog'}
                     className={styles['addPanel']}
                   >
@@ -667,7 +700,8 @@ function Loaded({ injected, renderSlot }: { injected: ModelsSectionFace; renderS
                 ? (
                   <div
                     id={`${addId}-custom-panel`}
-                    {...bothOffered ? { role: 'tabpanel', 'aria-labelledby': `${addId}-custom` } : {}}
+                    role="tabpanel"
+                    aria-labelledby={`${addId}-custom`}
                     hidden={mode !== 'custom'}
                     className={styles['addPanel']}
                   >
@@ -688,17 +722,43 @@ function Loaded({ injected, renderSlot }: { injected: ModelsSectionFace; renderS
                   </div>
                 )
                 : null}
+              {mounted('opencode') && piAi !== undefined
+                ? (
+                  <div
+                    id={`${addId}-opencode-panel`}
+                    role="tabpanel"
+                    aria-labelledby={`${addId}-opencode`}
+                    hidden={mode !== 'opencode'}
+                    className={styles['addPanel']}
+                  >
+                    <OpencodeImportCard
+                      taken={state.rows.map(row => row.entry.provider)}
+                      shipped={shipped}
+                      protocols={protocols}
+                      revision={piAi.revision}
+                      operations={operations}
+                      t={t}
+                      readOnly={!state.writable}
+                      onClose={(changed) => {
+                        closeAdd()
+                        if (changed) void controller.load()
+                      }}
+                      onBusyChange={setImportBusy}
+                    />
+                  </div>
+                )
+                : null}
             </div>
           )
-          : catalogOffered || customOffered
+          : catalogOffered || customOffered || importOffered
             ? (
-              // One entry for both ways to gain a provider; the card behind it
+              // One entry for every way to gain a provider; the card behind it
               // splits them. Full width, so it lines up with the rows above.
               <div className={styles['addActions']}>
                 <button
                   type="button"
                   className={styles['addButton']}
-                  disabled={!state.writable || state.status !== 'ready' || (!catalogEnabled && !customEnabled)}
+                  disabled={!state.writable || state.status !== 'ready' || !enabled.catalog && !enabled.custom && !enabled.opencode}
                   onClick={() => {
                     if (controller.store.getSnapshot().status !== 'ready') return
                     const first = addable[0]
