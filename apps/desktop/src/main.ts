@@ -62,6 +62,7 @@ import { DesktopQuitConfirmation } from './quit-confirmation.ts'
 import { DesktopTray } from './tray.ts'
 import { DesktopBackgroundNotice } from './background-notice.ts'
 import { applyPortablePaths } from './portable.ts'
+import { planSandboxRecovery, watchSandboxLaunchFailures } from './sandbox-recovery.ts'
 
 let focusPrimaryWindow = (): void => {}
 let stopForRecovery = async (): Promise<void> => {}
@@ -90,6 +91,11 @@ if (portable !== undefined) console.info('desktop: portable data at', portable.d
 // Platform-conventional logs directory (macOS ~/Library/Logs/<name>, otherwise under userData);
 // set before ready so the first fatal report already resolves under it.
 if (portable === undefined) app.setAppLogsPath()
+
+// Packaged Windows launches trace every start to <logs>/startup.log and recover once
+// without the renderer sandbox when security software blocks Chromium child processes.
+planSandboxRecovery(app)
+watchSandboxLaunchFailures(app)
 
 function currentDesktopLocale(): ReturnType<typeof resolveDesktopLocale> {
   return resolveDesktopLocale(windowsLanguage ?? app.getLocale())
@@ -735,7 +741,6 @@ async function main(): Promise<void> {
     // A confirmation on a hidden window would go unseen, so it waits for the next show; the mandatory
     // flow keeps its own taskbar and Dock attention instead.
     if (!isMandatory()) await windowShown()
-    // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- A quit can begin while the show is awaited.
     if (quitting) return state
     return updates.install(version)
   }
