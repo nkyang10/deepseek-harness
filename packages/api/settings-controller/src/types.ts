@@ -25,10 +25,30 @@ declare module '@deepseek-ai/dsh-typert-protocol' {
      * never the value.
      */
     'credential/rejected': { readonly ref: string }
+    /** The Host mounts no filesystem service for the default OpenCode config read. */
+    'opencode-config/unavailable': {}
+    /** No documented OpenCode config location exists; details list the candidates. */
+    'opencode-config/not-found': { readonly candidates: readonly string[] }
+    /** The first existing candidate is not a regular file. */
+    'opencode-config/not-file': { readonly path: string }
+    /** The first existing candidate exceeds the fixed read cap. */
+    'opencode-config/too-large': { readonly path: string }
+    /** The filesystem refused the read for a reason other than absence or size. */
+    'opencode-config/read-failed': { readonly path: string }
+    /** The first existing candidate is not UTF-8 text. */
+    'opencode-config/not-text': { readonly path: string }
   }
 }
 
 /** Confirmation that the settings document was handed to the native editor. */
 export interface SettingsDocumentOpenValue {
   readonly opened: true
+}
+
+/** One OpenCode configuration document read from the Host filesystem. */
+export interface OpenCodeConfigFile {
+  /** Absolute path the Host read, for the page to show. */
+  readonly path: string
+  /** UTF-8 file contents, still unparsed. */
+  readonly content: string
 }
