@@ -47,6 +47,9 @@ const PASSCODE_BODY_MAX_CHARS = 4_096
 const PASSCODE_MAX_FAILURES = 10
 const PASSCODE_BLOCK_MILLISECONDS = 60_000
 
+/** No-script/no-frame CSP for every served login page. */
+const LOGIN_PAGE_CSP = "default-src 'none'; style-src 'unsafe-inline'; form-action 'self'; frame-ancestors 'none'"
+
 /** Read-only passcode reference; the Loader's volatile config field satisfies it. */
 export interface PasscodeSource {
   /** @returns the current passcode, or undefined when the owner has not set one. */
@@ -409,8 +412,9 @@ export class BrowserAuth {
   /**
    * Authenticate an index request. A valid root query code pairs the browser and
    * mints its cookie, then redirects to the directory-relative clean `./`; a valid
-   * cookie lets the caller serve the index; every other request receives the same
-   * minimal 401 response.
+   * cookie lets the caller serve the index; a form POST that carries no configured
+   * passcode receives the minimal 401 text response, and every other unauthenticated
+   * request receives a login page.
    * @param req - incoming root or configured-index request.
    * @param res - response owned when this method returns false.
    * @param secure - whether the listener receiving this request serves TLS; the
@@ -434,7 +438,7 @@ export class BrowserAuth {
         this.writeRedirect(res)
         return false
       }
-      this.writeUnauthorized(req, res)
+      this.writeIndexUnauthorized(req, res)
       return false
     }
     if (this.isAuthenticated(req, secure)) return true
@@ -442,7 +446,7 @@ export class BrowserAuth {
       await this.authorizePasscode(req, res, secure)
       return false
     }
-    this.writeUnauthorized(req, res)
+    this.writeIndexUnauthorized(req, res)
     return false
   }
 
@@ -760,10 +764,6 @@ export class BrowserAuth {
   }
 
   private writeUnauthorized(req: ConnectionIndexRequest, res: ConnectionIndexResponse): void {
-    if (this.configuredPasscode() !== undefined && req.method !== 'POST') {
-      this.writePasscodePage(req, res, 401)
-      return
-    }
     res.writeHead(401, {
       'cache-control': 'no-store',
       'content-type': 'text/plain; charset=utf-8',
@@ -771,6 +771,53 @@ export class BrowserAuth {
     res.end(req.method === 'HEAD'
       ? undefined
       : 'dsh web authentication required; pair again from the application that serves this page.\n')
+  }
+
+  /**
+   * Respond to an unauthenticated index request. With an owner passcode the
+   * visitor receives the passcode login page; without one they receive a
+   * self-contained sign-in page naming the pairing link and the passcode option.
+   * A form POST keeps the plain-text response the passcode form and API clients
+   * expect.
+   * @param req - index request already known to be unauthenticated.
+   * @param res - response owned by this call.
+   */
+  private writeIndexUnauthorized(req: ConnectionIndexRequest, res: ConnectionIndexResponse): void {
+    if (req.method === 'POST') {
+      this.writeUnauthorized(req, res)
+      return
+    }
+    this.writeLoginPage(req, res, 401,
+      this.configuredPasscode() === undefined ? signInRequiredPage() : passcodePage())
+  }
+
+  /**
+   * Send a fixed login document with the shared login CSP. A HEAD request
+   * receives the headers without the body.
+   * @param req - request whose method decides whether a body is written.
+   * @param res - response owned by this call.
+   * @param status - status line for this page.
+   * @param document - fixed login document; no request data reaches the markup.
+   * @param blockedUntil - end of the active block, written as `Retry-After`.
+   */
+  private writeLoginPage(
+    req: ConnectionIndexRequest,
+    res: ConnectionIndexResponse,
+    status: number,
+    document: string,
+    blockedUntil?: number,
+  ): void {
+    const headers: Record<string, string> = {
+      'cache-control': 'no-store',
+      'content-type': 'text/html; charset=utf-8',
+      'content-security-policy': LOGIN_PAGE_CSP,
+      'referrer-policy': 'no-referrer',
+    }
+    if (blockedUntil !== undefined) {
+      headers['retry-after'] = String(Math.max(1, Math.ceil((blockedUntil - Date.now()) / 1000)))
+    }
+    res.writeHead(status, headers)
+    res.end(req.method === 'HEAD' ? undefined : document)
   }
 
   /**
@@ -789,17 +836,7 @@ export class BrowserAuth {
     error?: 'incorrect' | 'tooMany' | 'badRequest',
     blockedUntil?: number,
   ): void {
-    const headers: Record<string, string> = {
-      'cache-control': 'no-store',
-      'content-type': 'text/html; charset=utf-8',
-      'content-security-policy': "default-src 'none'; style-src 'unsafe-inline'; form-action 'self'; frame-ancestors 'none'",
-      'referrer-policy': 'no-referrer',
-    }
-    if (blockedUntil !== undefined) {
-      headers['retry-after'] = String(Math.max(1, Math.ceil((blockedUntil - Date.now()) / 1000)))
-    }
-    res.writeHead(status, headers)
-    res.end(req.method === 'HEAD' ? undefined : passcodePage(error))
+    this.writeLoginPage(req, res, status, passcodePage(error), blockedUntil)
   }
 }
 
@@ -812,21 +849,8 @@ function passcodeError(error: 'incorrect' | 'tooMany' | 'badRequest'): string {
   }
 }
 
-/**
- * Fixed login document for a deployment whose owner configured a passcode.
- * @param error - closed error code, or undefined on the first visit.
- * @returns a self-contained HTML page posting back to the same directory.
- */
-function passcodePage(error?: 'incorrect' | 'tooMany' | 'badRequest'): string {
-  return `<!doctype html>
-<html lang="en">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="referrer" content="no-referrer">
-<title>DeepSeek Harness — passcode required</title>
-<style>
-:root { color-scheme: light dark; }
+/** Shared stylesheet for every served login page. */
+const LOGIN_CSS = `:root { color-scheme: light dark; }
 * { box-sizing: border-box; }
 body { margin: 0; min-height: 100vh; display: grid; place-items: center; background: #f6f6f7; color: #1f2328;
   font: 15px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif; }
@@ -850,20 +874,59 @@ button:disabled { opacity: 0.6; cursor: default; }
   button { background: #238636; }
   .error { color: #f85149; }
 }
-</style>
+`
+
+/**
+ * Assemble one self-contained login document: no scripts, frames, or external
+ * requests, so it renders identically on a locked-down device.
+ * @param title - document title, a closed constant that never carries request data.
+ * @param body - the `<main>` content.
+ * @returns a complete HTML document.
+ */
+function loginDocument(title: string, body: string): string {
+  return `<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="referrer" content="no-referrer">
+<title>${title}</title>
+<style>
+${LOGIN_CSS}</style>
 </head>
 <body>
 <main>
-  <h1>Enter passcode</h1>
+${body}
+</main>
+</body>
+</html>
+`
+}
+
+/**
+ * Login document for a deployment whose owner configured a passcode.
+ * @param error - closed error code, or undefined on the first visit.
+ * @returns a self-contained HTML page posting back to the same directory.
+ */
+function passcodePage(error?: 'incorrect' | 'tooMany' | 'badRequest'): string {
+  return loginDocument('DeepSeek Harness — passcode required', `  <h1>Enter passcode</h1>
   <p>This DeepSeek Harness Web deployment is protected by a passcode.</p>
   ${error === undefined ? '' : passcodeError(error)}
   <form method="post" action="./">
     <label for="passcode">Passcode</label>
     <input id="passcode" name="passcode" type="password" autocomplete="current-password" autofocus required>
     <button type="submit">Continue</button>
-  </form>
-</main>
-</body>
-</html>
-`
+  </form>`)
+}
+
+/**
+ * Login document for a deployment with no owner passcode. It directs the visitor
+ * to the pairing link the application shows and names the passcode as the option
+ * the owner can enable to sign in from this page directly.
+ * @returns a self-contained HTML page with no form.
+ */
+function signInRequiredPage(): string {
+  return loginDocument('DeepSeek Harness — sign in required', `  <h1>Open the app to sign in</h1>
+  <p>This DeepSeek Harness Web deployment is protected. Open DeepSeek Harness on the host machine and use its pairing link to sign in on this device.</p>
+  <p>The owner can also enable a passcode, which lets you sign in from this page.</p>`)
 }

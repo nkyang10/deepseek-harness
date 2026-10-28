@@ -44,7 +44,7 @@ kind: "package-reference"
 
 cookie 的绝对有效期自配对时算起，`cookieMaxAgeDays` 默认设为 30 天，并在确定性名称与签名 payload 中同时绑定规范化 hostname 和 port。它是 host-only、`Path=/`、`HttpOnly`、`SameSite=Strict`；收到该 index 请求的监听器提供 TLS 时才带上 `Secure`，且只由该监听器自身的协议决定，`publicUrl` 声明与转发头都不参与判断。
 
-可选的 `passcode` 配置为无法共享配对链接、需要从其他设备访问的部署提供由人选择的登录口令。至少八个字符，默认未设置。设置后，未认证的 index 请求会渲染一个自包含的口令页，而不是纯文本 401 响应。匹配的表单 POST 会像共享链接一样配对浏览器；不匹配时页面重新渲染，只携带封闭的错误标记，因此请求数据不会进入页面标记。由于口令的熵低于配对码，该 POST 在浏览器认证之前先通过 Host/Origin 校验；WebView 或沙箱页面可能以不透明的 `null` Origin 提交，该表单路径在通过 Host 栅栏后接受它，而 `/api` 仍拒绝不透明 Origin。失败次数按直连对端地址计数；连续第十次失败会以 `Retry-After` 将该对端封禁一分钟，成功提交则清零。页面以禁止脚本与框架的 CSP 及 no-referrer 提供。已配对的浏览器保留其 cookie，永远不会看到该页面。口令是经脱敏的 settings secret，通过 volatile 配置引用读取，因此 settings 写入无需重启即可生效。口令跨越网络时，应通过 TLS 提供该页面。
+可选的 `passcode` 配置为无法共享配对链接、需要从其他设备访问的部署提供由人选择的登录口令。至少八个字符，默认未设置。未认证的 index 请求始终渲染一个自包含的登录页：设置口令时显示口令表单，未设置时显示一个登录页，把访客指引到应用的配对链接，并把口令列为所有者可启用的方式。匹配的表单 POST 会像共享链接一样配对浏览器；不匹配时页面重新渲染，只携带封闭的错误标记，因此请求数据不会进入页面标记。由于口令的熵低于配对码，该 POST 在浏览器认证之前先通过 Host/Origin 校验；WebView 或沙箱页面可能以不透明的 `null` Origin 提交，该表单路径在通过 Host 栅栏后接受它，而 `/api` 仍拒绝不透明 Origin。失败次数按直连对端地址计数；连续第十次失败会以 `Retry-After` 将该对端封禁一分钟，成功提交则清零。登录页以禁止脚本与框架的 CSP 及 no-referrer 提供，而 `/connect` 交换与未配置口令时的表单 POST 保持纯文本 401。已配对的浏览器保留其 cookie，永远不会看到该页面。口令是经脱敏的 settings secret，通过 volatile 配置引用读取，因此 settings 写入无需重启即可生效。口令跨越网络时，应通过 TLS 提供该页面。
 
 HTTPS cookie 名称与签名 audience 包含 `https:` scheme，因此即使 hostname 和 port 相同，HTTP cookie 也无法通过 TLS 监听器的认证。默认端口按监听器的 scheme 归一化。既有 HTTP cookie audience 保持不变。
 
