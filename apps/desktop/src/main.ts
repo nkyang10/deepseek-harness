@@ -62,7 +62,7 @@ import { DesktopQuitConfirmation } from './quit-confirmation.ts'
 import { DesktopTray } from './tray.ts'
 import { DesktopBackgroundNotice } from './background-notice.ts'
 import { applyPortablePaths } from './portable.ts'
-import { planSandboxRecovery, watchSandboxLaunchFailures } from './sandbox-recovery.ts'
+import { logStartupLine, planSandboxRecovery, watchSandboxLaunchFailures } from './sandbox-recovery.ts'
 
 let focusPrimaryWindow = (): void => {}
 let stopForRecovery = async (): Promise<void> => {}
@@ -92,10 +92,32 @@ if (portable !== undefined) console.info('desktop: portable data at', portable.d
 // set before ready so the first fatal report already resolves under it.
 if (portable === undefined) app.setAppLogsPath()
 
+/** One `startup.log` line for the launch and quit sequence under investigation. */
+const logStartup = (line: string): void => {
+  try {
+    logStartupLine(app.getPath('logs'), line)
+  } catch (error) {
+    // Startup and quit diagnostics never add a second failure to the sequence being traced.
+    void error
+  }
+}
+/** A quit whose Host and Platform cleanup has not finished by this deadline ends the process by force. */
+const QUIT_FORCE_EXIT_TIMEOUT_MS = 5_000
+
+// The single-instance claim precedes sandbox recovery so a routed second launch quits before it
+// writes startup diagnostics, records a sandbox marker, or spawns sandboxed children; its arrival
+// focuses the running instance, matching a tray-icon click.
+const ownsDesktopInstance = claimDesktopSingleInstance(app, () => {
+  logStartup('launch routed to the running instance; focusing its window')
+  focusPrimaryWindow()
+})
+
 // Packaged Windows launches trace every start to <logs>/startup.log and recover once
 // without the renderer sandbox when security software blocks Chromium child processes.
-planSandboxRecovery(app)
-watchSandboxLaunchFailures(app)
+if (ownsDesktopInstance) {
+  planSandboxRecovery(app)
+  watchSandboxLaunchFailures(app)
+}
 
 function currentDesktopLocale(): ReturnType<typeof resolveDesktopLocale> {
   return resolveDesktopLocale(windowsLanguage ?? app.getLocale())
@@ -1359,6 +1381,11 @@ async function main(): Promise<void> {
   const finishQuit = (): void => {
     quitting = true
     shuttingDown = true
+    logStartup('quit cleanup started')
+    const forcedQuitTimer = setTimeout(() => {
+      logStartup(`quit cleanup did not finish within ${QUIT_FORCE_EXIT_TIMEOUT_MS} ms; forcing process exit`)
+      app.exit(0)
+    }, QUIT_FORCE_EXIT_TIMEOUT_MS)
     updateJournal?.action('quit-requested')
     quitConfirmation.dispose()
     backgroundNotice?.dispose()
@@ -1372,7 +1399,12 @@ async function main(): Promise<void> {
     void Promise.all([Promise.resolve(mandatoryPolicy?.dispose()).then(() => policyAuth?.dispose()), backend.close(),
       // A Platform cleanup failure is logged without cutting the remaining Host shutdown short.
       platformView.dispose().catch((error: unknown) => { console.error(error) })])
-      .catch((error: unknown) => { console.error(error) }).finally(() => { app.quit() })
+      .catch((error: unknown) => { console.error(error) })
+      .finally(() => {
+        clearTimeout(forcedQuitTimer)
+        logStartup('quit cleanup finished')
+        app.quit()
+      })
   }
   app.on('before-quit', (event) => {
     if (shellInstallerOwnsQuit) {
@@ -1391,6 +1423,7 @@ async function main(): Promise<void> {
     event.preventDefault()
     if (skipQuitConfirmation || sessionEnding) { finishQuit(); return }
     void quitConfirmation.confirm().then((approved) => {
+      logStartup(`quit confirmation ${approved ? 'approved' : 'cancelled'}`)
       if (quitting || shellInstallerOwnsQuit) return
       if (approved) { finishQuit(); return }
       // A quit that started from closing the welcome window destroyed it; a cancelled quit needs it back.
@@ -1452,8 +1485,6 @@ async function main(): Promise<void> {
   }
   publishUpdate(updateState)
 }
-
-const ownsDesktopInstance = claimDesktopSingleInstance(app, () => { focusPrimaryWindow() })
 
 if (ownsDesktopInstance) void app.whenReady().then(main).catch(async (error: unknown) => {
   const message = error instanceof Error ? error.message : String(error)
