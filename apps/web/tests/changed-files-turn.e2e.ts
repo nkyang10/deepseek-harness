@@ -75,7 +75,7 @@ describe('web e2e: a git workspace turn ends with its changed files', () => {
       const cwdToken = '{{fromRequest:Current working directory: "([^"]+)"}}'
       await writeFile(replayOverride, JSON.stringify(script).replaceAll('{{cwd}}', JSON.stringify(cwdToken).slice(1, -1)))
     }
-    scaffold = await launchWebScaffold({
+    scaffold = await launchWebScaffold({ localePreference: 'zh',
       developerTools: false,
       compareReplaySession: MODE === 'refresh' ? true : 'read-only',
       extraOverlayPath: fileURLToPath(new URL('./changed-files-turn.overlay.yml', import.meta.url)),

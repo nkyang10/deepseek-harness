@@ -219,9 +219,9 @@ it.each([false, true])('starts in the workspace and opens welcome only when auth
   const contents = state.contents as { mainFrame: { url: string }; send: ReturnType<typeof vi.fn> }
   const event = { sender: contents, senderFrame: contents.mainFrame }
   const bootstrap = state.handlers.get(DESKTOP_IPC.localeBootstrap)!
-  expect(await bootstrap(event)).toEqual({ languages: ['en-US'], preference: 'zh' })
+  expect(await bootstrap(event)).toEqual({ preference: 'zh' })
   state.preference = 'en'
-  expect(await bootstrap(event)).toEqual({ languages: ['en-US'], preference: 'en' })
+  expect(await bootstrap(event)).toEqual({ preference: 'en' })
   const changed = state.listeners.get(DESKTOP_IPC.localeChanged)!
   const initialMenus = state.menu.mock.calls.length
   changed({ ...event, senderFrame: {} }, 'en')
@@ -230,7 +230,7 @@ it.each([false, true])('starts in the workspace and opens welcome only when auth
   changed(event, 'en')
   expect(state.dialogLocale!().id).toBe('en')
   expect(state.menu).toHaveBeenCalledTimes(initialMenus + 1)
-  expect(await bootstrap(event)).toEqual({ languages: ['en-US'], preference: 'en' })
+  expect(await bootstrap(event)).toEqual({ preference: 'en' })
 
   // A completed sign-out reopens the entry only when no credential remains.
   const attemptId = 'login' as NonNullable<AccountView['attempt']>['id']

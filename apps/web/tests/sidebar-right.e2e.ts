@@ -1153,12 +1153,16 @@ describe('web e2e: shipped right Sidebar', () => {
       expect(tripwire.warnings).toEqual([])
     })
 
-    // The product ships Chinese; the cases above advertise English so their role
-    // locators stay stable. This is the other half of the same seam, and the
-    // screenshot it takes is what the copy draft gets reviewed from. It lives in
-    // this block because a settled session is its precondition too — a case that
-    // depends on a sibling block's setup passes only in the right order.
+    // The product ships Chinese; the cases above run on the stored English
+    // preference so their role locators stay stable. This is the other half of
+    // the same seam, and the screenshot it takes is what the copy draft gets
+    // reviewed from. It lives in this block because a settled session is its
+    // precondition too — a case that depends on a sibling block's setup passes
+    // only in the right order.
     it('renders the shipped Chinese copy on a Chinese page', async () => {
+      // The language is host-global: pin zh for this page load and restore the
+      // English preference afterwards.
+      await scaffold.ctx.settings.update('locale', { preference: 'zh' })
       const zhPage = await browser.newPage({ viewport: { width: 1680, height: 1000 }, locale: ZH_BROWSER_LOCALE })
       await zhPage.addInitScript(() => { Object.defineProperty(navigator, 'platform', { configurable: true, value: 'MacIntel' }) })
       const zhTripwire = watchConsole(zhPage)
@@ -1207,6 +1211,7 @@ describe('web e2e: shipped right Sidebar', () => {
         expect(zhTripwire.warnings).toEqual([])
       } finally {
         await zhPage.close()
+        await scaffold.ctx.settings.update('locale', { preference: 'en' })
       }
     }, 120_000)
   })

@@ -32,9 +32,11 @@ export function requireBuilt(name: string): unknown {
 }
 
 /**
- * Browser language a page must advertise to boot into the product's Chinese
- * surface: with no stored preference the client derives its initial locale
- * from the browser, and Playwright's default browser asks for English.
+ * Browser language a Chinese-surface scenario advertises on its pages. The
+ * product language comes from the Host-stored preference
+ * (`launchWebScaffold({ localePreference: 'zh' })`), never from the browser;
+ * this keeps Intl formatting and the localized OS affordances of the zh
+ * scenarios consistent.
  */
 export const ZH_BROWSER_LOCALE = 'zh-CN'
 
@@ -105,10 +107,10 @@ export async function pinBrowserClock(page: Page): Promise<void> {
 
 /**
  * Open the standard browser-test page advertising English before client boot.
- * This keeps role locators and goldens deterministic while leaving the Host
- * settings document free to override the provisional browser-derived locale;
- * scenarios asserting the Chinese surface advertise
- * {@link ZH_BROWSER_LOCALE} instead. The context uses Asia/Shanghai to preserve
+ * This keeps role locators and goldens deterministic alongside the English
+ * default of the Host-stored preference; scenarios asserting the Chinese
+ * surface launch with `localePreference: 'zh'` and advertise
+ * {@link ZH_BROWSER_LOCALE}. The context uses Asia/Shanghai to preserve
  * the recorded Web user-source timezone independently of the host timezone.
  * @param browser - Playwright browser owning the page.
  * @param height - Viewport height; width is fixed to the lane baseline.
@@ -223,10 +225,9 @@ export async function connectFreshWorkspace(page: Page, root: string, name = 'wo
 }
 
 /**
- * {@link connectFreshWorkspace} over a page that advertises
- * {@link ZH_BROWSER_LOCALE}: the English helper's anchors assume the locale
- * most other scenarios boot, so a scenario that deliberately keeps zh needs
- * the localized picker copy.
+ * {@link connectFreshWorkspace} over a page on a scaffold whose stored
+ * preference is Chinese: the English helper's anchors assume the default
+ * surface, so a scenario that stores zh needs the localized picker copy.
  * @param page - the browser page under test.
  * @param root - workspace parent directory.
  * @param name - directory created under `root` and connected.

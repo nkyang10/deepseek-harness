@@ -7,13 +7,13 @@ import { cleanup } from '@testing-library/react'
 import { LocaleRuntime } from '@deepseek-ai/dsh-client-locale/client'
 import { SlotRegistry } from '@deepseek-ai/dsh-client-ui-renderer/client'
 import { resolveSlotLabel } from '@deepseek-ai/dsh-client-ui-slots'
-import { usePinnedBrowserLanguages } from '@deepseek-ai/dsh-client-test-runtime'
+import { bootLocale } from '@deepseek-ai/dsh-client-test-runtime'
 import { apply, inject, NS } from '../src/client/index.ts'
 import { PluginInventorySettingsTab } from '../src/client/PluginInventorySettingsTab.tsx'
 import type { PluginInventorySettingsTabInjected } from '../src/client/PluginInventorySettingsTab.tsx'
 import { apply as hostApply } from '../src/index.ts'
 
-usePinnedBrowserLanguages('zh-CN')
+const LOCALE_BOOT = bootLocale('zh-CN')
 afterEach(cleanup)
 
 const EMPTY = { entries: [] }
@@ -27,7 +27,7 @@ async function bench() {
   const retryClient = vi.fn(async () => {})
   ctx.provide('modules', { entries: { state: createSnapshotStore({ syncing: false, failures: [] }), retry: retryClient } } as unknown as ClientModuleLoader)
   await ctx.plugin(SlotRegistry).await()
-  const locale = new LocaleRuntime(ctx)
+  const locale = new LocaleRuntime(ctx, undefined, LOCALE_BOOT)
   ctx.provide('locale', locale)
   class RemoteService extends Service {
     constructor(serviceCtx: Context) {

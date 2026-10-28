@@ -129,7 +129,7 @@ test('registers into the sidebar', async ({ remote, start }) => {
 | [`src/snapshot.ts`](src/snapshot.ts) | DOM 快照序列化器（类名哈希折叠、`<svg>` 指纹） |
 | [`src/access.ts`](src/access.ts) | `allowAllAccess` props 与 `allowAllAccessPlugin`：remote-access Client 行的全允许替身 |
 | [`src/remote.ts`](src/remote.ts) | 用于 host RPC 的 `TestRemote` 替身、`RemoteError` 值转出 |
-| [`src/translate.ts`](src/translate.ts) + [`src/locale-env.ts`](src/locale-env.ts) | 翻译与固定浏览器语言测试辅助 |
+| [`src/translate.ts`](src/translate.ts) + [`src/locale-env.ts`](src/locale-env.ts) | 翻译与启动语言偏好测试辅助 |
 | [`src/config-form.ts`](src/config-form.ts) | 带测试驱动发布与写入 spy 的 `stubConfigForm` |
 | [`src/assembly/roster.ts`](src/assembly/roster.ts) | `ClientRosterRow`、`ClientRoster`（`of`/`closure`/`pick`/`without`）、它所标注的 `AssemblyPlan`，以及 `graphFromRoster` |
 | [`src/assembly/modules.ts`](src/assembly/modules.ts) | 源码 `/client` 导入及替换，通过生产模块 facade 的待注册工厂队列登记 |

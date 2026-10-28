@@ -8,7 +8,7 @@ import { createSnapshotStore } from '@deepseek-ai/dsh-client-store'
 import type { ILayout, PanelInfo } from '@deepseek-ai/dsh-client-ui-layout/client'
 import { SlotRegistry } from '@deepseek-ai/dsh-client-ui-renderer/client'
 import { resolveSlotLabel } from '@deepseek-ai/dsh-client-ui-slots'
-import { allowAllAccess, TestRemote, usePinnedBrowserLanguages } from '@deepseek-ai/dsh-client-test-runtime'
+import { bootLocale, allowAllAccess, TestRemote } from '@deepseek-ai/dsh-client-test-runtime'
 import * as settings from '@deepseek-ai/dsh-client-ui-settings/client'
 import { apply, inject, NS, PANEL_ID } from '../src/client/index.ts'
 import { PluginManagerPage } from '../src/client/PluginManagerPage.tsx'
@@ -16,7 +16,7 @@ import { PluginRefreshToast, type PluginRefreshToastFace } from '../src/client/P
 import { PluginsPanelIcon } from '../src/client/PluginsPanelIcon.tsx'
 import type { PluginManagerFace } from '../src/client/manager-store.ts'
 
-usePinnedBrowserLanguages('zh-CN')
+const LOCALE_BOOT = bootLocale('zh-CN')
 beforeEach(() => { localStorage.clear() })
 afterEach(cleanup)
 
@@ -24,7 +24,7 @@ async function bench() {
   const ctx = new Context()
   onTestFinished(async () => { await ctx.fiber.dispose() })
   await ctx.plugin(SlotRegistry).await()
-  const locale = new LocaleRuntime(ctx)
+  const locale = new LocaleRuntime(ctx, undefined, LOCALE_BOOT)
   ctx.provide('locale', locale)
   class LocaleHolder extends Service {
     constructor(serviceCtx: Context) {

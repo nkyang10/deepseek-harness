@@ -39,7 +39,7 @@ describe('web e2e: requested SVG is explicitly delivered', () => {
       const cwdToken = '{{fromRequest:Current working directory: "([^"]+)"}}'
       await writeFile(replayOverride, JSON.stringify(script).replaceAll('{{cwd}}', JSON.stringify(cwdToken).slice(1, -1)))
     }
-    scaffold = await launchWebScaffold({
+    scaffold = await launchWebScaffold({ localePreference: 'zh',
       compareReplaySession: true,
       extraOverlayPath: fileURLToPath(new URL('./present-svg.overlay.yml', import.meta.url)),
       ...(replayOverride === undefined ? {} : { replayFixture: FIXTURE, replayOverride }),

@@ -8,18 +8,15 @@ import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type { WorkspaceId } from '@deepseek-ai/dsh-api-workspace-controller/client'
 import type { MainPanelId, PanelInfo } from '@deepseek-ai/dsh-client-ui-layout/client'
 import type { PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
-import { afterAll, afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   allowAllAccess,
   bindSnapshotSelector,
+  bootLocale,
   chatSnapshot,
   conversationSnapshot,
   SlotTestRuntime,
-  usePinnedBrowserLanguages,
 } from '../src/index.ts'
-
-const originalLanguages = [...navigator.languages]
-const originalLanguage = navigator.language
 
 declare module '@deepseek-ai/dsh-client-ui-slots' {
   interface SlotMap {
@@ -27,12 +24,7 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
   }
 }
 
-usePinnedBrowserLanguages('zh-CN', 'en-US')
 afterEach(cleanup)
-afterAll(() => {
-  expect(navigator.languages).toEqual(originalLanguages)
-  expect(navigator.language).toBe(originalLanguage)
-})
 
 function entry(seq: number): SessionLiveEventEntry {
   return {
@@ -151,9 +143,10 @@ describe('fixture helpers', () => {
     expect(view.result.current).toBe(2)
   })
 
-  it('pins both browser language fields for the calling suite', () => {
-    expect(navigator.languages).toEqual(['zh-CN', 'en-US'])
-    expect(navigator.language).toBe('zh-CN')
+  it('resolves the boot preference from the primary subtag of a BCP 47 tag', () => {
+    expect(bootLocale('zh-CN')).toEqual({ preference: 'zh' })
+    expect(bootLocale('en-US')).toEqual({ preference: 'en' })
+    expect(bootLocale('fr')).toEqual({ preference: 'en' })
   })
 })
 

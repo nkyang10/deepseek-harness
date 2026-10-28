@@ -136,7 +136,7 @@ it.skipIf(MODE === 'record')('reuses saved native Account Flash translations acr
     { id: 'translator', config: { bingEndpoint: `${origin}/unexpected-free`, googleEndpoint: `${origin}/unexpected-free`,
       deepseekTimeoutMs: 120_000 } },
   ]))
-  const scaffold = await launchWebScaffold({ profile: { packages: [{ dir: BUNDLE }] }, extraOverlayPath: overlay,
+  const scaffold = await launchWebScaffold({ localePreference: 'zh', profile: { packages: [{ dir: BUNDLE }] }, extraOverlayPath: overlay,
     replayFixture: FIXTURE, compareReplaySession: false })
   resources.scaffold = scaffold
   const account = scaffold.ctx.get('deepseekAccount')

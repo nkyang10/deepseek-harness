@@ -6,7 +6,7 @@
 import { createSnapshotStore } from '@deepseek-ai/dsh-client-store'
 import { afterEach, describe, expect, it } from 'vitest'
 import { act, screen } from '@testing-library/react'
-import { SlotTestRuntime, stubConfigForm, usePinnedBrowserLanguages } from '@deepseek-ai/dsh-client-test-runtime'
+import { bootLocale, SlotTestRuntime, stubConfigForm } from '@deepseek-ai/dsh-client-test-runtime'
 import { LocaleRuntime } from '@deepseek-ai/dsh-client-locale/client'
 import type { SessionLiveEventEntry, SessionReference } from '@deepseek-ai/dsh-api-session-controller/client'
 import type { SessionId, SessionSeq } from '@deepseek-ai/dsh-session/types'
@@ -18,7 +18,7 @@ import { apply as applyChat, inject as injectChat } from '@deepseek-ai/dsh-clien
 import type { QuotaNoticeInjected } from '@deepseek-ai/dsh-client-ui-chat/client'
 import { CHAT_SETTINGS_NAMESPACE, type ChatSettings } from '../src/chat-settings.ts'
 
-usePinnedBrowserLanguages('en')
+const LOCALE_BOOT = bootLocale('en')
 
 const SID = 'session-1' as SessionId
 const disposers: Array<() => Promise<void>> = []
@@ -63,7 +63,7 @@ async function bench() {
     openSession: () => {},
   } as never)
   runtime.remote.provideNamespaces({ session: { openWorkspacePath: async () => ({ ok: true, value: { opened: true } }) } })
-  const locale = new LocaleRuntime(runtime.ctx)
+  const locale = new LocaleRuntime(runtime.ctx, undefined, LOCALE_BOOT)
   runtime.ctx.provide('locale', locale)
   runtime.slots.installLocale(locale)
   await runtime.declare({

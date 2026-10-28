@@ -94,7 +94,7 @@ it('places dynamic Session menu rows by order among the shipped ones and removes
 }, 120_000)
 
 it('synchronizes two pages, disposes effects and restores an offline page from the latest graph without navigation', async () => {
-  const scaffold = await launchWebScaffold({
+  const scaffold = await launchWebScaffold({ localePreference: 'zh',
     extraInstallAnchors: [join(FIXTURE, 'package.json')],
   })
   const host = scaffold.ctx.loader.ctx.fiber.uid
@@ -179,7 +179,7 @@ it('synchronizes two pages, disposes effects and restores an offline page from t
 }, 90_000)
 
 it('keeps a failed client download local and retries without changing Host enablement', async () => {
-  const scaffold = await launchWebScaffold({ extraInstallAnchors: [join(FIXTURE, 'package.json')] })
+  const scaffold = await launchWebScaffold({ localePreference: 'zh', extraInstallAnchors: [join(FIXTURE, 'package.json')] })
   const browser = await chromium.launch()
   try {
     const page = await browser.newPage({ locale: ZH_BROWSER_LOCALE })
@@ -214,7 +214,7 @@ it('recovers an uncreated client entry with rebuilt factory code without navigat
   const broken = source.replace("const React = require('react')", "throw new Error('fixture r0 factory failed')")
   expect(broken).not.toBe(source)
   await writeFile(file, broken)
-  const scaffold = await launchWebScaffold({ extraInstallAnchors: [join(fixture, 'package.json')] })
+  const scaffold = await launchWebScaffold({ localePreference: 'zh', extraInstallAnchors: [join(fixture, 'package.json')] })
   onTestFinished(() => scaffold.close())
   const host = scaffold.ctx.loader.ctx.fiber.uid
   const browser = await chromium.launch()
@@ -247,7 +247,7 @@ it('recovers an uncreated client entry with rebuilt factory code without navigat
 })
 
 it('reports bootstrap rebuilds without remounting the settings page or navigating', async () => {
-  const scaffold = await launchWebScaffold()
+  const scaffold = await launchWebScaffold({ localePreference: 'zh' })
   onTestFinished(() => scaffold.close())
   const host = scaffold.ctx.loader.ctx.fiber.uid
   const browser = await chromium.launch()
@@ -282,7 +282,7 @@ it('reports bootstrap rebuilds without remounting the settings page or navigatin
 })
 
 it('removes the client UI and resources while Host cleanup is still pending', async () => {
-  const scaffold = await launchWebScaffold({ extraInstallAnchors: [join(FIXTURE, 'package.json')] })
+  const scaffold = await launchWebScaffold({ localePreference: 'zh', extraInstallAnchors: [join(FIXTURE, 'package.json')] })
   let release!: () => void
   const cleanup = new Promise<void>((resolve) => { release = resolve })
   onTestFinished(async () => { release(); await scaffold.close() })

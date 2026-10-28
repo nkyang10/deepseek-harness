@@ -16,7 +16,7 @@ describe('web e2e: preset roster guidance', () => {
   let page: Page
   let tripwire: ReturnType<typeof watchConsole>
   beforeAll(async () => {
-    scaffold = await launchWebScaffold({ profile: { packages: [] } })
+    scaffold = await launchWebScaffold({ localePreference: 'zh', profile: { packages: [] } })
     browser = await chromium.launch()
     page = await browser.newPage({ viewport: { width: 1680, height: 1000 }, locale: ZH_BROWSER_LOCALE })
     tripwire = watchConsole(page)

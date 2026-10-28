@@ -63,7 +63,7 @@ it('cancels installation, retries and highlights the enabled plugin at 40% alpha
   await writeFile(overlay, `- id: plugin-manager\n  config: ${JSON.stringify({ pnpmCommand: process.execPath })}\n`)
   let scaffold: WebScaffold | undefined
   try {
-    scaffold = await launchWebScaffold({ profile: { packages: [] }, extraOverlayPath: overlay })
+    scaffold = await launchWebScaffold({ localePreference: 'zh', profile: { packages: [] }, extraOverlayPath: overlay })
     const browser = await chromium.launch()
     const delivery = Promise.withResolvers<undefined>()
     const cancellationReply = Promise.withResolvers<undefined>()

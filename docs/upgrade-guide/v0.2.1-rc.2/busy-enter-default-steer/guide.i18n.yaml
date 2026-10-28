@@ -1,0 +1,16 @@
+# Bilingual-pair consistency record for guide.md (docs/i18n/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write docs/upgrade-guide/v0.2.1-rc.2/busy-enter-default-steer/guide.md
+/:
+  en: 6697a5fbee9d9481
+  zh: 5be1905d1e934db8
+/busy-enter-defaults-to-steer:
+  en: 41d7aff5bd685303
+  zh: ba6edaed97971fc0
+/busy-enter-defaults-to-steer/change:
+  en: 456cebdf8f91404e
+  zh: fbc72a91564b1ad5
+/busy-enter-defaults-to-steer/migration:
+  en: a8af32c831eeb829
+  zh: b1e360bba39d31ca

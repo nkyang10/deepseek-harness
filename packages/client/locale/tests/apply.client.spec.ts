@@ -75,13 +75,13 @@ describe('locale apply', () => {
     try {
       await vi.waitFor(() => { expect(read).toHaveBeenCalledOnce() })
       const disposal = fiber.dispose()
-      if (outcome === 'resolve') ready.resolve({ languages: ['zh-CN'], preference: null })
+      if (outcome === 'resolve') ready.resolve({ preference: null })
       else ready.reject(new Error('native window closed'))
       await disposal
       expect(b.ctx.get('locale')).toBeUndefined()
       expect(onChange).not.toHaveBeenCalled()
     } finally {
-      ready.resolve({ languages: ['zh-CN'], preference: null })
+      ready.resolve({ preference: null })
       await b.ctx.fiber.dispose()
     }
   })
@@ -94,7 +94,7 @@ describe('locale apply', () => {
     const fiber = b.ctx.plugin({ inject: [...inject], apply })
     try {
       expect(b.ctx.get('locale')).toBeUndefined()
-      ready.resolve({ languages: ['en-US'], preference: 'zh' })
+      ready.resolve({ preference: 'zh' })
       await fiber.await()
       const locale = b.ctx.get('locale') as LocaleRuntime
       expect(locale.getSnapshot().active).toBe('zh')
@@ -106,15 +106,15 @@ describe('locale apply', () => {
       b.ctx.emit('locale/change', { active: 'zh', locales: [], revision: 99 })
       expect(onChange).toHaveBeenCalledTimes(calls)
     } finally {
-      ready.resolve({ languages: ['en-US'], preference: 'zh' })
+      ready.resolve({ preference: 'zh' })
       await b.ctx.fiber.dispose()
     }
   })
 
   // These are wiring specs, not default-language specs. A fresh LocaleRuntime
-  // with no jsdom `window` skips browser detection and opens on FALLBACK_LOCALE
-  // (en); each test that reads localized copy stages its locale explicitly via
-  // setLocale/Host preference instead of leaning on a dead browser pin.
+  // opens on FALLBACK_LOCALE (en) until an explicit preference arrives; each
+  // test that reads localized copy stages its locale explicitly via
+  // setLocale/Host preference.
 
   it('declares the slot service', () => {
     expect(inject).toEqual(['slots', 'remote', 'configForms'])
@@ -128,8 +128,7 @@ describe('locale apply', () => {
     // Base dictionaries are registered: the (ns, locale) seats are occupied.
     expect(() => locale.register('common', 'zh', {})).toThrow('already has locale')
     expect(() => locale.register('common', 'en', {})).toThrow('already has locale')
-    // The lane has no jsdom `window`, so detection never runs and a fresh
-    // service opens on FALLBACK_LOCALE (en); read the zh side explicitly.
+    // A fresh service opens on FALLBACK_LOCALE (en); read the zh side explicitly.
     locale.setLocale('zh')
     expect(locale.bind(SETTINGS_NS)('language.title')).toBe('语言')
     const entry = before.slots.entries(SLOT).find(e => e.component === LanguageRow)!
@@ -195,20 +194,20 @@ describe('locale apply', () => {
     const b = await bench()
     // The shared mirror read once at bench time; a Host-side change reaches it
     // through the document invalidation, exactly as production announces one.
-    // Preference must differ from the provisional locale (FALLBACK_LOCALE = en
-    // with no window), or clearing it below would be unobservable.
+    // Preference must differ from the default locale (FALLBACK_LOCALE = en),
+    // or clearing it below would be unobservable.
     b.setHostPreference('zh')
     b.events.emit('settings/document-updated', [LOCALE_SETTINGS_NAMESPACE, 0])
     declareItems(b.slots)
     await b.ctx.plugin({ inject: [...inject], apply }).await()
     const locale = b.ctx.get('locale') as LocaleRuntime
     await vi.waitFor(() => { expect(locale.getLocale().active).toBe('zh') })
-    // Cleared preference falls back to the provisional locale.
+    // Cleared preference falls back to English.
     b.setHostPreference(undefined)
     b.events.emit('settings/document-updated', [LOCALE_SETTINGS_NAMESPACE, 0])
     await vi.waitFor(() => { expect(locale.getLocale().active).toBe('en') })
-    // Re-selecting zh after the clear is an explicit pick of the provisional
-    // value and must persist as a written preference.
+    // Re-selecting zh after the clear is an explicit choice and must persist
+    // as a written preference.
     b.setHostPreference('zh')
     b.events.emit('settings/document-updated', [LOCALE_SETTINGS_NAMESPACE, 0])
     await vi.waitFor(() => { expect(locale.getLocale().active).toBe('zh') })

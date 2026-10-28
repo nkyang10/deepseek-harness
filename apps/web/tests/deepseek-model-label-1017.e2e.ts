@@ -19,7 +19,7 @@ describe.skipIf(MODE === 'record')('web e2e: temporary DeepSeek release badge', 
   let tripwire: ReturnType<typeof watchConsole>
 
   beforeAll(async () => {
-    scaffold = await launchWebScaffold({
+    scaffold = await launchWebScaffold({ localePreference: 'zh',
       extraOverlayPath: fileURLToPath(new URL('./fixtures/deepseek-model-label-1017/account.overlay.yml', import.meta.url)),
       replayFixture: FIXTURE,
       replayProvidersOnly: true,

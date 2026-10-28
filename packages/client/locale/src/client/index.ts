@@ -98,13 +98,11 @@ declare module '@deepseek-ai/cordis' {
 }
 
 /**
- * English is both the locale the UI opens in when the browser names no registered
- * language (and for non-browser runs), and the dictionary consulted after the
+ * English is both the locale the UI opens in until an explicit stored
+ * preference selects another language, and the dictionary consulted after the
  * active locale misses a key. One constant serves both because the shipped
  * `zh`/`en` dictionaries carry identical key sets, so neither direction can
- * leave a key unresolved; the residual case points at English rather than
- * zh because a browser naming no registered language is the reader least
- * likely to read Chinese.
+ * leave a key unresolved.
  */
 export const FALLBACK_LOCALE: BuiltInLocaleId = 'en'
 
@@ -171,8 +169,6 @@ export class LocaleRuntime {
   private listeners = new Set<() => void>()
   private readonly ctx: ClientContext
   private readonly host: ConfigForm<LocaleSettings> | undefined
-  /** Browser-derived locale standing wherever no explicit Host selection does. */
-  private provisional: LocaleId
   /** Last explicit selection, including one awaiting an external registration. */
   private preference: LocaleId | undefined
 
@@ -183,12 +179,11 @@ export class LocaleRuntime {
    * absent compositions (standalone dictionary registries) stay process-local.
    * @param bootstrap - native initialization; absent in ordinary browsers.
    */
-  constructor(ctx: ClientContext, host?: ConfigForm<LocaleSettings>, private readonly bootstrap?: LocaleBootstrap) {
+  constructor(ctx: ClientContext, host?: ConfigForm<LocaleSettings>, bootstrap?: LocaleBootstrap) {
     this.ctx = ctx
     this.host = host
     for (const locale of BUILT_IN_LOCALES) this.catalog.set(localeKey(locale.id), locale)
     const locales = this.localeList()
-    this.provisional = resolveInitialLocale(locales, bootstrap?.languages)
     this.preference = bootstrap?.preference ?? undefined
     this.snapshot = Object.freeze({ active: this.resolveActive(), locales, revision: 0 })
     if (host !== undefined) {
@@ -244,10 +239,9 @@ export class LocaleRuntime {
    * Switch the active locale — the only user preference write entry.
    *
    * The durable write happens even when the id already matches the active
-   * locale, because the active value may be a provisional browser-derived or
-   * fallback resolution that nothing has stored yet. Picking the language
-   * already on screen is still an explicit choice, and it must survive a
-   * different browser sharing the same DSH home. Only the render notification
+   * locale, because the active value may be the unstored English default.
+   * Picking the language already on screen is still an explicit choice, and it
+   * must survive a different browser sharing the same DSH home. Only the render notification
    * is conditional: republishing an unchanged locale would churn every
    * subscriber for nothing.
    * @param id - a registered locale id; unknown ids throw.
@@ -264,8 +258,8 @@ export class LocaleRuntime {
    * Add one selectable language to the shared catalog. Its fallback must
    * already be registered, and following fallback definitions must terminate
    * at English. Dictionaries may register before or after this definition.
-   * Registration rechecks an unresolved Host preference and the browser's
-   * ordered language list. The caller owns the returned disposer; removing an
+   * Registration rechecks an unresolved Host preference. The caller owns the
+   * returned disposer; removing an
    * active language falls back without clearing the stored id.
    * @param input - stable id, self-described label, and fallback language id.
    * @returns idempotent disposer removing this exact definition.
@@ -298,7 +292,7 @@ export class LocaleRuntime {
 
   /**
    * Adopt the scope's accepted durable selection without writing it back; an
-   * absent selection returns to the browser-derived locale.
+   * absent selection returns to English.
    * @param host - the constructor-narrowed scope driving this adoption.
    */
   private adopt(host: ConfigForm<LocaleSettings>): void {
@@ -310,19 +304,18 @@ export class LocaleRuntime {
     this.publish(target, true)
   }
 
-  /** Recompute browser fallback and publish the current catalog. */
+  /** Recompute fallback chains and publish the current catalog. */
   private publishCatalog(): void {
     this.fallbackChains.clear()
     const locales = this.localeList()
-    this.provisional = resolveInitialLocale(locales, this.bootstrap?.languages)
     const active = this.resolveActive()
     this.publish(active, active !== this.snapshot.active, locales)
   }
 
-  /** Resolve an explicit preference only while its definition is available. */
+  /** Resolve an explicit preference only while its definition is available; otherwise English. */
   private resolveActive(): LocaleId {
-    if (this.preference === undefined) return this.provisional
-    return this.catalog.get(localeKey(this.preference))?.id ?? this.provisional
+    if (this.preference === undefined) return FALLBACK_LOCALE
+    return this.catalog.get(localeKey(this.preference))?.id ?? FALLBACK_LOCALE
   }
 
   /** Snapshot the catalog in registration order. */
@@ -512,44 +505,6 @@ export class LocaleRuntime {
   }
 }
 
-/**
- * The browser's own language wins over {@link FALLBACK_LOCALE}; an explicit
- * Host preference may replace this provisional value after plugin activation.
- */
-function resolveInitialLocale(locales: readonly LocaleDefinition[], languages?: readonly string[]): LocaleId {
-  return detectBrowserLocale(locales, languages) ?? FALLBACK_LOCALE
-}
-
-/**
- * The first registered locale the browser asks for. Each browser tag first
- * matches a locale id exactly, then its primary subtag, so an exact regional
- * registration wins before a language-wide fallback.
- * `window` is the browser test, not `navigator`: Node exposes a global
- * `navigator` reporting the machine's own language, which must not decide the
- * locale for non-browser runs. `navigator.language` trails the ordered
- * `languages` list and covers hosts exposing only the single tag.
- * @param locales - definitions currently available to the browser.
- * @param languages - native system language order, when supplied by a shell.
- * @returns the first matching locale id, or undefined.
- */
-function detectBrowserLocale(locales: readonly LocaleDefinition[], languages?: readonly string[]): LocaleId | undefined {
-  if (languages === undefined) {
-    if (typeof window === 'undefined') return undefined
-    // Embedders and older WebViews may omit the DOM-typed `languages` property.
-    const browserLanguages = (navigator as { readonly languages?: readonly string[] }).languages
-    languages = [...(browserLanguages ?? []), navigator.language]
-  }
-  for (const tag of languages) {
-    const requested = localeKey(tag)
-    const exact = locales.find(locale => localeKey(locale.id) === requested)
-    if (exact !== undefined) return exact.id
-    const primary = requested.split('-')[0]
-    const match = locales.find(locale => localeKey(locale.id).split('-')[0] === primary)
-    if (match !== undefined) return match.id
-  }
-  return undefined
-}
-
 /** Required services: slot registration plus the settings transport. */
 export const inject = ['slots', 'remote', 'configForms']
 
@@ -600,7 +555,7 @@ export async function apply(ctx: ClientContext): Promise<void> {
   }
   ctx.effect(() => locale.subscribe(sync), 'locale: language row and document synchronization')
   // The served markup declares one language; the resolved locale may differ
-  // (browser detection, or a stored preference adopted after activation), so
+  // (a stored preference adopted after activation), so
   // state it once at activation rather than waiting for the first change.
   sync()
   const injected = (actions: BoundActions<typeof store>): LanguageRowInjected => {

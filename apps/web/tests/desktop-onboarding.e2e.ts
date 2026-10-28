@@ -83,7 +83,7 @@ describe.skipIf(MODE === 'record')('web e2e: App-only desktop onboarding', () =>
     origin = `http://127.0.0.1:${address.port}`
     const overlay = join(root, 'account.patch.yml')
     await writeFile(overlay, `- id: deepseek-account\n  config:\n    platformOrigin: ${origin}\n    allowLoopbackHttp: true\n`)
-    scaffold = await launchWebScaffold({ deepSeekMissingCredential: true, extraOverlayPath: overlay })
+    scaffold = await launchWebScaffold({ deepSeekMissingCredential: true, localePreference: 'zh', extraOverlayPath: overlay })
     await scaffold.ctx.credentials.modifyRecord(credentialKey('deepseek-account-platform', 'default'), async () => ({
       kind: 'grant', payload: { version: 1, issuer: origin, token: 'onboarding-fixture-token' },
     }))
@@ -399,7 +399,8 @@ describe.skipIf(MODE === 'record')('web e2e: App-only desktop onboarding', () =>
 
   it('keeps funded credit actions stable and rechecks on reload in English dark mode', async () => {
     bonusBalance = '12.50'
-    await scaffold.ctx.settings.mutate('ui-theme', [{ op: 'set', path: ['preference'], value: 'dark' }])
+    await scaffold.ctx.settings.update('ui-theme', [{ op: 'set', path: ['preference'], value: 'dark' }])
+    await scaffold.ctx.settings.update('locale', { preference: 'en' })
     page = await desktopPage('en-US')
     const response = page.waitForResponse('**/api/account/getBalance')
     await page.goto(scaffold.authenticatedUrl, { waitUntil: 'load' })

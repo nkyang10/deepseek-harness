@@ -35,7 +35,7 @@ it.each(['network', 'timeout'] as const)('offers a mirror after a GitHub %s, the
   await writeFile(gitConfig, `[http "https://github.com/"]\n proxy = http://127.0.0.1:${String(address.port)}\n`)
   const overlay = join(scratch, 'cordis.patch.yml')
   await writeFile(overlay, '- id: ui-plugin-manager\n  config: { registryProbeEnabled: false }\n')
-  const scaffold = await launchWebScaffold({
+  const scaffold = await launchWebScaffold({ localePreference: 'zh',
     profile: { packages: [], packageManager: { command: process.execPath, args: [], env: { GIT_CONFIG_GLOBAL: gitConfig, GIT_CONFIG_NOSYSTEM: '1' } } },
     extraOverlayPath: overlay,
   })

@@ -6,7 +6,7 @@
 import { createSnapshotStore } from '@deepseek-ai/dsh-client-store'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { act, fireEvent, screen } from '@testing-library/react'
-import { SlotTestRuntime, stubConfigForm, usePinnedBrowserLanguages } from '@deepseek-ai/dsh-client-test-runtime'
+import { bootLocale, SlotTestRuntime, stubConfigForm } from '@deepseek-ai/dsh-client-test-runtime'
 import { LocaleRuntime } from '@deepseek-ai/dsh-client-locale/client'
 import type { SessionLiveEventEntry, SessionReference } from '@deepseek-ai/dsh-api-session-controller/client'
 import type { SessionId, SessionSeq } from '@deepseek-ai/dsh-session/types'
@@ -26,7 +26,7 @@ import { createPlatformPages, type PlatformPages } from '../src/client/platform-
 import type { PlatformBridge } from '../src/client/PlatformOverlay.tsx'
 import { en, zh } from '../src/client/locales.ts'
 
-usePinnedBrowserLanguages('en')
+const LOCALE_BOOT = bootLocale('en')
 
 const SID = 'session-1' as SessionId
 const NOTICE = 'Request quota exhausted.'
@@ -105,7 +105,7 @@ async function bench() {
     openSession: () => {},
   } as never)
   runtime.remote.provideNamespaces({ session: { openWorkspacePath: async () => ({ ok: true, value: { opened: true } }) } })
-  const locale = new LocaleRuntime(runtime.ctx)
+  const locale = new LocaleRuntime(runtime.ctx, undefined, LOCALE_BOOT)
   runtime.ctx.provide('locale', locale)
   runtime.slots.installLocale(locale)
   runtime.ctx.effect(() => locale.register('settings.account', { en, zh }), 'spec: account dictionaries')

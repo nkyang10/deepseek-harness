@@ -1,14 +1,12 @@
 // @vitest-environment jsdom
 import { describe, expect, it, vi } from 'vitest'
-import {
-  SlotTestRuntime, stubConfigForm, usePinnedBrowserLanguages,
-} from '@deepseek-ai/dsh-client-test-runtime'
+import { bootLocale, SlotTestRuntime, stubConfigForm } from '@deepseek-ai/dsh-client-test-runtime'
 import { LocaleRuntime } from '@deepseek-ai/dsh-client-locale/client'
 import { createSnapshotStore, type ObservableSnapshot } from '@deepseek-ai/dsh-client-store'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import { apply, inject, type ViewTab } from '@deepseek-ai/dsh-client-ui-conversation/client'
 
-usePinnedBrowserLanguages('zh-CN')
+const LOCALE_BOOT = bootLocale('zh-CN')
 
 const SID = 'session-1' as SessionId
 
@@ -22,7 +20,7 @@ async function bench(options: { declareConversation?: boolean } = {}) {
     openSession: vi.fn(),
   } as never)
   runtime.ctx.provide('configForms', { developerTools: { enabled: developerTools }, get: () => stubConfigForm().scope } as never)
-  const locale = new LocaleRuntime(runtime.ctx)
+  const locale = new LocaleRuntime(runtime.ctx, undefined, LOCALE_BOOT)
   runtime.ctx.provide('locale', locale)
   runtime.slots.installLocale(locale)
   if (options.declareConversation !== false) {

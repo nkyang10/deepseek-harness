@@ -47,7 +47,7 @@ describe('web e2e: Models settings page configures a dormant provider', () => {
 
   beforeAll(async () => {
     vi.stubEnv('OPENAI_API_KEY', 'models-settings-test-key')
-    scaffold = await launchWebScaffold({})
+    scaffold = await launchWebScaffold({ localePreference: 'zh' })
     browser = await chromium.launch()
     // The scenario asserts the shipped Chinese copy, so the browser asks for it.
     page = await browser.newPage({ viewport: { width: 1680, height: 1000 }, locale: ZH_BROWSER_LOCALE })

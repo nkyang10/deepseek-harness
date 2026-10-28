@@ -6,7 +6,7 @@ import { launchWebScaffold, watchConsole } from './scaffold.ts'
 import { openSettings, ZH_BROWSER_LOCALE } from './support.ts'
 
 it('keeps settings and expanded plugin dialogs clear of the Windows caption across fullscreen transitions', async () => {
-  const scaffold = await launchWebScaffold({
+  const scaffold = await launchWebScaffold({ localePreference: 'zh',
     profile: { packages: [] },
     extraOverlayPath: fileURLToPath(new URL('./pin-browse-picker.overlay.yml', import.meta.url)),
   })

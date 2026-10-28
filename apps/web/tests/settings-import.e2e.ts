@@ -18,7 +18,7 @@ it('imports settings.yaml into the profile once and applies the imported values'
     'ui-onboarding:', `  welcomeNoticeVersion: '${WELCOME_NOTICE_VERSION}'`,
     '',
   ].join('\n'))
-  const scaffold = await launchWebScaffold({ harnessHome, welcomeNoticePending: true })
+  const scaffold = await launchWebScaffold({ localePreference: 'zh', harnessHome, welcomeNoticePending: true })
   const browser = await chromium.launch()
   try {
     const patchPath = join(harnessHome, 'profiles', 'scaffold', 'cordis.patch.yml')

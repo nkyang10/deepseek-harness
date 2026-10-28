@@ -41,6 +41,7 @@ describe('web e2e: plugin manager', () => {
 
   beforeAll(async () => {
     scaffold = await launchWebScaffold({
+      localePreference: 'zh',
       extraOverlayPath: fileURLToPath(new URL('./pin-browse-picker.overlay.yml', import.meta.url)),
       profile: { packages: [{ dir: join(FIXTURE_PLUGINS, 'fixture-bundle') }], bundles: ['@fixture/missing-bundle'] },
     })
@@ -110,6 +111,7 @@ describe('web e2e: plugin manager', () => {
       // determine whether the two intrinsic items fit beside each other.
       const PINNED_PLACEMENT: Record<number, 'beside' | 'below'> = { 1680: 'beside', 1024: 'beside', 390: 'below', 430: 'below' }
       for (const language of ['en', 'zh'] as const) {
+        await headerScaffold.ctx.settings.update('locale', { preference: language })
         const context = await browser.newContext({
           viewport: { width: 1680, height: 1000 }, locale: language === 'en' ? 'en-US' : ZH_BROWSER_LOCALE,
           reducedMotion: 'reduce',
@@ -1122,6 +1124,7 @@ describe('web e2e: plugin manager', () => {
 describe('web e2e: startup-applied plugin management', () => {
   it('saves a bundle selection that waits for the next start and keeps its rows read-only', async () => {
     const scaffold = await launchWebScaffold({
+      localePreference: 'zh',
       extraOverlayPath: fileURLToPath(new URL('./pin-browse-picker.overlay.yml', import.meta.url)),
       profile: { hmr: false, packages: [{ dir: join(FIXTURE_PLUGINS, 'fixture-bundle') }] },
     })

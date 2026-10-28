@@ -371,18 +371,13 @@ export function resolveDesktopLocale(locale: string): DesktopLocale {
 }
 
 /**
- * Choose a built-in dictionary from the shared preference, then ordered OS languages.
+ * Choose a built-in dictionary from the shared preference; English is the default.
  * @param preference - explicit locale.preference, or null when no language was selected.
- * @param languages - operating-system languages in preference order.
- * @returns the supported dictionary, falling back to English.
+ * @returns the supported dictionary, defaulting to English.
  */
-export function resolveDesktopStartupLocale(preference: string | null, languages: readonly string[]): DesktopLocale {
+export function resolveDesktopStartupLocale(preference: string | null): DesktopLocale {
   const selected = preference?.toLowerCase()
   if (selected === 'zh' || selected === 'en') return resolveDesktopLocale(selected)
-  for (const language of languages) {
-    const primary = language.toLowerCase().split('-')[0]
-    if (primary === 'zh' || primary === 'en') return resolveDesktopLocale(primary)
-  }
   return resolveDesktopLocale('en')
 }
 

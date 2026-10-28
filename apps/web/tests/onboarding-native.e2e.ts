@@ -21,7 +21,7 @@ describe.skipIf(MODE === 'record').each([false, true])('web e2e: native credenti
   let tripwire: ReturnType<typeof watchConsole>
 
   beforeAll(async () => {
-    scaffold = await launchWebScaffold({
+    scaffold = await launchWebScaffold({ localePreference: 'zh',
       deepSeekMissingCredential: true,
       welcomeNoticePending: true,
       ...desktop ? {} : { extraOverlayPath: fileURLToPath(new URL('./fixtures/onboarding-native/cordis.patch.yml', import.meta.url)) },

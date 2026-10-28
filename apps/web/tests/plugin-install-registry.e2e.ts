@@ -25,7 +25,7 @@ it.each(['https://registry.npmjs.org/', MIRROR])('selects the fastest responding
     + `- id: ui-plugin-manager\n  config: ${JSON.stringify({ registryProbeEnabled: true })}\n`)
   let scaffold: WebScaffold | undefined
   try {
-    scaffold = await launchWebScaffold({ profile: { packages: [] }, extraOverlayPath: overlay })
+    scaffold = await launchWebScaffold({ localePreference: 'zh', profile: { packages: [] }, extraOverlayPath: overlay })
     const browser = await chromium.launch()
     try {
       const profile = join(scaffold.harnessHome, 'profiles', 'scaffold')

@@ -13,14 +13,14 @@ import {
   apply as applyChat, inject as injectChat, type ToolResultNode,
 } from '@deepseek-ai/dsh-client-ui-chat/client'
 import type { PropsRenderSlots } from '@deepseek-ai/dsh-client-ui-slots'
-import { SlotTestRuntime, usePinnedBrowserLanguages, stubConfigForm } from '@deepseek-ai/dsh-client-test-runtime'
+import { bootLocale, SlotTestRuntime, stubConfigForm } from '@deepseek-ai/dsh-client-test-runtime'
 import { apply as applyConversation, inject as injectConversation } from '@deepseek-ai/dsh-client-ui-conversation/client'
 import { PartialArguments } from '@deepseek-ai/dsh-util-values'
 import { apply as applyTool, inject as injectTool } from '../src/client/apply.ts'
 
-// The service reads its initial locale from the browser; these specs assert
-// the shipped Chinese copy, so they state the browser they assume.
-usePinnedBrowserLanguages('zh-CN')
+// The UI opens on English until a stored preference arrives; these specs
+// assert the shipped Chinese copy, so they boot with the Chinese preference.
+const LOCALE_BOOT = bootLocale('zh-CN')
 
 const SID = 's1' as SessionId
 // jsdom omits font loading events used by the resident composer.
@@ -97,7 +97,7 @@ async function bench(nodes: ToolResultNode[]) {
     }),
     openSession: vi.fn(),
   } as never)
-  const locale = new LocaleRuntime(runtime.ctx)
+  const locale = new LocaleRuntime(runtime.ctx, undefined, LOCALE_BOOT)
   runtime.ctx.provide('locale', locale)
   runtime.slots.installLocale(locale)
   await runtime.sessions.add({

@@ -8,9 +8,7 @@ import { useState } from 'react'
 import { LocaleRuntime } from '@deepseek-ai/dsh-client-locale/client'
 import type { ISession } from '@deepseek-ai/dsh-api-session-controller/client'
 import type { PropsRenderSlots } from '@deepseek-ai/dsh-client-ui-slots'
-import {
-  RemoteError, SlotTestRuntime, usePinnedBrowserLanguages, stubConfigForm,
-} from '@deepseek-ai/dsh-client-test-runtime'
+import { bootLocale, RemoteError, SlotTestRuntime, stubConfigForm } from '@deepseek-ai/dsh-client-test-runtime'
 import { InputHub } from '../src/client/input/hub.ts'
 import { apply, inject, type EmptyWorkspaceOwnerProps } from '@deepseek-ai/dsh-client-ui-conversation/client'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
@@ -23,7 +21,7 @@ Range.prototype.getBoundingClientRect = () => ({
 })
 
 
-usePinnedBrowserLanguages('zh-CN')
+const LOCALE_BOOT = bootLocale('zh-CN')
 
 
 const SID = 's1' as SessionId
@@ -83,7 +81,7 @@ async function bench(opts?: { blank?: boolean }) {
   const runtime = await SlotTestRuntime.create()
   const openSession = provideWorkspaceNavigation(runtime)
   runtime.ctx.provide('configForms', { developerTools: { enabled: createSnapshotStore(true) }, get: () => stubConfigForm().scope } as never)
-  const locale = new LocaleRuntime(runtime.ctx)
+  const locale = new LocaleRuntime(runtime.ctx, undefined, LOCALE_BOOT)
   runtime.ctx.provide('locale', locale)
   runtime.slots.installLocale(locale)
   await runtime.sessions.add({
@@ -106,7 +104,7 @@ describe('resident composer', () => {
     const runtime = await SlotTestRuntime.create()
     provideWorkspaceNavigation(runtime)
     runtime.ctx.provide('configForms', { developerTools: { enabled: createSnapshotStore(true) }, get: () => stubConfigForm().scope } as never)
-    const locale = new LocaleRuntime(runtime.ctx)
+    const locale = new LocaleRuntime(runtime.ctx, undefined, LOCALE_BOOT)
     runtime.ctx.provide('locale', locale)
     runtime.slots.installLocale(locale)
     await runtime.root.declare(LAYOUT_CHILDREN, AppRoot)
@@ -133,7 +131,7 @@ describe('resident composer', () => {
     const runtime = await SlotTestRuntime.create()
     const openSession = provideWorkspaceNavigation(runtime)
     runtime.ctx.provide('configForms', { developerTools: { enabled: createSnapshotStore(true) }, get: () => stubConfigForm().scope } as never)
-    const locale = new LocaleRuntime(runtime.ctx)
+    const locale = new LocaleRuntime(runtime.ctx, undefined, LOCALE_BOOT)
     runtime.ctx.provide('locale', locale)
     runtime.slots.installLocale(locale)
     await runtime.workspaces.update((draft) => {
@@ -200,7 +198,7 @@ describe('prompt rejection through the assembled composer', () => {
     const runtime = await SlotTestRuntime.create()
     const openSession = provideWorkspaceNavigation(runtime)
     runtime.ctx.provide('configForms', { developerTools: { enabled: createSnapshotStore(true) }, get: () => stubConfigForm().scope } as never)
-    const locale = new LocaleRuntime(runtime.ctx)
+    const locale = new LocaleRuntime(runtime.ctx, undefined, LOCALE_BOOT)
     runtime.ctx.provide('locale', locale)
     runtime.slots.installLocale(locale)
     const prompt = vi.fn<ISession['prompt']>(async () => ({

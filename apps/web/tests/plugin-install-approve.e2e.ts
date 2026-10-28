@@ -15,7 +15,7 @@ it('offers approval for blocked install scripts and installs once they are allow
   await writeFile(overlay, `- id: plugin-manager\n  config: ${JSON.stringify({ pnpmCommand: process.execPath })}\n`)
   let scaffold: WebScaffold | undefined
   try {
-    scaffold = await launchWebScaffold({ profile: { packages: [] }, extraOverlayPath: overlay })
+    scaffold = await launchWebScaffold({ localePreference: 'zh', profile: { packages: [] }, extraOverlayPath: overlay })
     const browser = await chromium.launch()
     try {
       const profile = join(scaffold.harnessHome, 'profiles', 'scaffold')

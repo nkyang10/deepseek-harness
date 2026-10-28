@@ -56,7 +56,7 @@ describe('web e2e: the composer model switch is the default for later sessions',
   }
 
   beforeAll(async () => {
-    scaffold = await launchWebScaffold({ extraOverlayPath: OVERLAY })
+    scaffold = await launchWebScaffold({ localePreference: 'zh', extraOverlayPath: OVERLAY })
     // Two routes so the picker has somewhere to start and somewhere to go.
     // Declared through the settings seam rather than the Models page: this
     // scenario is about the composer, and the declaring flow is covered by

@@ -11,15 +11,15 @@ import { createSnapshotStore } from '@deepseek-ai/dsh-client-store'
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { act, cleanup, waitFor } from '@testing-library/react'
-import { SlotTestRuntime, usePinnedBrowserLanguages } from '@deepseek-ai/dsh-client-test-runtime'
+import { bootLocale, SlotTestRuntime } from '@deepseek-ai/dsh-client-test-runtime'
 import { LocaleRuntime } from '@deepseek-ai/dsh-client-locale/client'
 import { en as commonEn } from '@deepseek-ai/dsh-client-locale/src/locales/en.ts'
 import { zh as commonZh } from '@deepseek-ai/dsh-client-locale/src/locales/zh.ts'
 import { apply, inject } from '@deepseek-ai/dsh-client-ui-sidebar/client'
 
-// The service reads its initial locale from the browser; these specs assert
-// the shipped Chinese copy, so they state the browser they assume.
-usePinnedBrowserLanguages('zh-CN')
+// The UI opens on English until a stored preference arrives; these specs
+// assert the shipped Chinese copy, so they boot with the Chinese preference.
+const LOCALE_BOOT = bootLocale('zh-CN')
 
 beforeEach(() => {
   vi.stubEnv('DSH_CLIENT_COMMIT_HASH', 'abc1234')
@@ -33,17 +33,17 @@ afterEach(() => {
 })
 
 /**
- * Boot the package over the slot test runtime. The default bench stays on
- * the service's default locale (zh — the fallback chain's base), pinning
- * what an untouched client shows; `locale: 'en'` pins the en copy instead.
- * The installed face backs the entry's standard `t` seat either way.
+ * Boot the package over the slot test runtime. The default bench boots the
+ * stored Chinese preference, pinning the shipped Chinese copy;
+ * `locale: 'en'` switches to the en copy. The installed face backs the
+ * entry's standard `t` seat either way.
  */
 async function bench(options: { locale?: 'en' } = {}) {
   const runtime = await SlotTestRuntime.create()
   runtime.ctx.provide('shortcuts', { catalog: createSnapshotStore([]) } as never)
   runtime.ctx.provide('layout', { toggleSidebar: vi.fn() })
   runtime.ctx.provide('uiWorkspace', { startSession: vi.fn() } as never)
-  const locale = new LocaleRuntime(runtime.ctx)
+  const locale = new LocaleRuntime(runtime.ctx, undefined, LOCALE_BOOT)
   locale.register('common', { zh: commonZh, en: commonEn })
   if (options.locale === 'en') locale.setLocale('en')
   runtime.ctx.provide('locale', locale)
@@ -54,7 +54,7 @@ async function bench(options: { locale?: 'en' } = {}) {
 }
 
 describe('sidebar shell snapshots', () => {
-  it('renders the expanded column in the default locale (zh, no setLocale)', async () => {
+  it('renders the expanded column from the stored zh preference', async () => {
     const { runtime } = await bench()
     const slot = runtime.renderSlot('sidebar', { collapsed: false, width: 300 })
     // Wordmark + capsule both start a session in the expanded state.

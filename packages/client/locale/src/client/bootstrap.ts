@@ -1,10 +1,8 @@
 /** Locale initialization supplied by a native shell before its Client tree mounts. */
 
-/** System languages and the existing Host preference for one page load. */
+/** The existing Host preference for one page load. */
 export interface LocaleBootstrap {
-  /** Operating-system language tags in preference order. */
-  readonly languages: readonly string[]
-  /** Stored locale.preference; null preserves automatic language selection. */
+  /** Stored locale.preference; null keeps the English default. */
   readonly preference: string | null
 }
 
@@ -22,10 +20,9 @@ export interface LocaleBridge {
  * @returns language initialization with no persistence side effects.
  */
 export function parseLocaleBootstrap(value: unknown): LocaleBootstrap {
-  if (typeof value !== 'object' || value === null || !('languages' in value) || !Array.isArray(value.languages)
-    || !value.languages.every((language: unknown) => typeof language === 'string')
+  if (typeof value !== 'object' || value === null
     || !('preference' in value) || (value.preference !== null && typeof value.preference !== 'string')) {
     throw new TypeError('locale: invalid native initialization data')
   }
-  return { languages: value.languages, preference: value.preference }
+  return { preference: value.preference }
 }

@@ -32,7 +32,7 @@ describe('web e2e: repairs a stored provider after catalog drift', () => {
       '          - id: "111"', '      zai: {}', '      acme-gateway:',
       '        baseURL: https://gateway.example/v1', '        models:', '          - id: "custom-model"', '',
     ].join('\n'))
-    scaffold = await launchWebScaffold({ harnessHome: home })
+    scaffold = await launchWebScaffold({ localePreference: 'zh', harnessHome: home })
     browser = await chromium.launch()
     page = await browser.newPage({ viewport: { width: 1680, height: 1000 }, locale: ZH_BROWSER_LOCALE })
     tripwire = watchConsole(page)

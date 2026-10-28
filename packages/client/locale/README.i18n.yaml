@@ -3,14 +3,14 @@
 # After editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write packages/client/locale/README.md
 /:
-  en: d2aaa955e01c2679
-  zh: 9d264cf8be1536cf
+  en: d61a9c5c6b40247a
+  zh: 72b1b7afa6c0ce05
 /deepseek-ai-dsh-client-locale:
   en: 9365090d78467dea
   zh: 74b6fbb9769d795f
 /deepseek-ai-dsh-client-locale/summary:
-  en: d8cc5ae25160ca20
-  zh: e8fc2b9fb663cdee
+  en: 2cb1d227156962a6
+  zh: 6caa32a138e45be4
 /deepseek-ai-dsh-client-locale/table-of-contents:
   en: d152484eb41ac6b4
   zh: bda879a892f240f0
@@ -18,8 +18,8 @@
   en: 7fedfbcbc3ad8cea
   zh: e29ba5230e0b9ecb
 /deepseek-ai-dsh-client-locale/use-this-package/choosing-a-language:
-  en: 8527d77583824eff
-  zh: 2ac53ced0a32ba19
+  en: 4f405bca775f11ce
+  zh: 681f2ef3aa4685a9
 /deepseek-ai-dsh-client-locale/use-this-package/registering-a-dictionary:
   en: 9b2fcfa8cae8dc4b
   zh: 293012a4d364ef59
@@ -27,8 +27,8 @@
   en: 3b63e84fe0fdf8f4
   zh: e97b5d1b92dff7ec
 /deepseek-ai-dsh-client-locale/use-this-package/registering-a-language-pack:
-  en: aa4e9c70523339cc
-  zh: 3359eddc4e9ef15e
+  en: ac1e3caed0e90a03
+  zh: c0fd6bb72dac46db
 /deepseek-ai-dsh-client-locale/use-this-package/what-the-host-half-does:
   en: 784035ca4b4838b8
   zh: 4a258795f408528f
@@ -39,8 +39,8 @@
   en: c2e0ab8bb6bcb26a
   zh: 508dec4db2c0fde6
 /deepseek-ai-dsh-client-locale/understand-the-implementation/preference-resolution:
-  en: d602d957654641c6
-  zh: 2db822b746a6471d
+  en: 088ff72b61bb4b95
+  zh: 0d716b9862b61a68
 /deepseek-ai-dsh-client-locale/understand-the-implementation/dictionary-lookup:
   en: f8dcc4035830e738
   zh: 8452ac63ee148c61
@@ -57,8 +57,8 @@
   en: ca75c51c89c2c9b0
   zh: de54f3467ef3b9be
 /deepseek-ai-dsh-client-locale/known-limitations-and-deferred-work:
-  en: 500ede048ef44c6a
-  zh: f741fae55b29a627
+  en: bd6e1251ec2ecc05
+  zh: b6c5e315d73f67ea
 /deepseek-ai-dsh-client-locale/known-limitations-and-deferred-work/dev-note:
   en: e67f633dc6fe7773
   zh: 3bb0c20c93f16f98

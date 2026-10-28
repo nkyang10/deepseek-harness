@@ -9,9 +9,7 @@ import type { CommandContribution, CommandUiContract } from '@deepseek-ai/dsh-cl
 import type { ISession, SessionReference } from '@deepseek-ai/dsh-api-session-controller/client'
 import { LocaleRuntime } from '@deepseek-ai/dsh-client-locale/client'
 import type { ObservableSnapshot } from '@deepseek-ai/dsh-client-store'
-import {
-  SlotTestRuntime, stubConfigForm, usePinnedBrowserLanguages,
-} from '@deepseek-ai/dsh-client-test-runtime'
+import { bootLocale, SlotTestRuntime, stubConfigForm } from '@deepseek-ai/dsh-client-test-runtime'
 import type { SessionBehaviorOverrides } from '@deepseek-ai/dsh-client-test-runtime'
 import {
   apply, inject, type ComposerBarInjected, type ConversationInjected,
@@ -23,7 +21,7 @@ import { createConversationStore } from '../src/client/stores.ts'
 import type { SessionInputShell } from '../src/client/input/facade.ts'
 import { RemoteError } from '@deepseek-ai/dsh-client-test-runtime'
 
-usePinnedBrowserLanguages('zh-CN')
+const LOCALE_BOOT = bootLocale('zh-CN')
 
 const ROOT = 'root-1' as SessionId
 
@@ -93,7 +91,7 @@ async function bench() {
   })
   const rootReference = runtime.sessions.retain(ROOT)
   references.set(ROOT, rootReference)
-  const locale = new LocaleRuntime(runtime.ctx)
+  const locale = new LocaleRuntime(runtime.ctx, undefined, LOCALE_BOOT)
   runtime.ctx.provide('locale', locale)
   runtime.slots.installLocale(locale)
   await runtime.root.declare({

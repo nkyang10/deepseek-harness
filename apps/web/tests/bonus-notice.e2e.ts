@@ -221,7 +221,7 @@ describe.skipIf(MODE === 'record')('web e2e: bonus notice', () => {
   let platform: Awaited<ReturnType<typeof mockPlatform>>
   const tripwires: ReturnType<typeof watchConsole>[] = []
 
-  /** @param locale - browser language driving the requested notice locale. @returns a desktop-renderer page. */
+  /** @param locale - browser language for page formatting; notice copy follows the stored preference. @returns a desktop-renderer page. */
   const openDesktopPage = async (locale: string): Promise<Page> => {
     const context = await browser.newContext({ viewport: { width: 1440, height: 960 }, locale })
     const opened = await context.newPage()
@@ -257,7 +257,7 @@ describe.skipIf(MODE === 'record')('web e2e: bonus notice', () => {
       { mode: 0o600 })
     const overlay = join(root, 'bonus-notice.overlay.yml')
     await writeFile(overlay, (await readFile(OVERLAY_TEMPLATE, 'utf8')).replaceAll('{{origin}}', platform.origin))
-    scaffold = await launchWebScaffold({ harnessHome: home, extraOverlayPath: overlay })
+    scaffold = await launchWebScaffold({ harnessHome: home, localePreference: 'zh', extraOverlayPath: overlay })
     // Resolve the signed-in identity before opening the renderer. First profile discovery
     // emits another account frame, which would supersede the held startup bonus read.
     expect(await scaffold.ctx.deepseekAccount.getProfile({
@@ -557,7 +557,10 @@ describe.skipIf(MODE === 'record')('web e2e: bonus notice', () => {
     await page.close()
 
     // Another device in another language gets the copy the server localized for it.
+    // The stored preference is host-global, so it is switched for this page load
+    // and restored to zh for the zh pages that follow.
     platform.grant(ORDER_EN, '9.00')
+    await scaffold.ctx.settings.update('locale', { preference: 'en' })
     const enPage = await openDesktopPage('en-US')
     await enPage.goto(scaffold.authenticatedUrl, { waitUntil: 'load' })
     const enCard = enPage.locator('aside').filter({ hasText: 'Bonus credited' }).filter({ hasText: enBonus })
@@ -570,6 +573,7 @@ describe.skipIf(MODE === 'record')('web e2e: bonus notice', () => {
 
     await enPage.close()
     await page.close()
+    await scaffold.ctx.settings.update('locale', { preference: 'zh' })
     platform.clearUnnotified()
     platform.grant(ORDER_WEB, '4.00')
     const webPage = await browser.newPage({ viewport: { width: 1440, height: 960 }, locale: 'zh-CN' })

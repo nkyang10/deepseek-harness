@@ -387,8 +387,7 @@ async function main(): Promise<void> {
   let updateStoppedHost = false
   let updateStopFailure: DesktopHostUncleanExitError | undefined
   let updateState: DesktopUpdateState = { phase: 'idle' }
-  const systemLanguages = app.getPreferredSystemLanguages()
-  let locale = resolveDesktopStartupLocale(null, systemLanguages)
+  let locale = resolveDesktopStartupLocale(null)
   windowsLanguage = locale.id
   let mandatoryPolicy: DesktopMandatoryUpdatePolicy | undefined
   let mandatoryUI: DesktopMandatoryUpdateWindow | undefined
@@ -866,13 +865,13 @@ async function main(): Promise<void> {
       throw new Error('desktop welcome: rejected locale request from an unowned frame')
     }
     if (welcomeBackend === undefined) throw new Error('desktop welcome: backend unavailable')
-    return { languages: systemLanguages, preference: await welcomeBackend.readLocalePreference() }
+    return { preference: await welcomeBackend.readLocalePreference() }
   })
   ipcMain.on(DESKTOP_IPC.localeChanged, (event, next: unknown) => {
     const window = mainWindow
     if (window === undefined || event.sender !== window.webContents || event.senderFrame !== window.webContents.mainFrame
       || typeof next !== 'string') return
-    const current = resolveDesktopStartupLocale(next, systemLanguages)
+    const current = resolveDesktopStartupLocale(next)
     if (current.id === locale.id) return
     locale = current
     platformView.notifyLocaleChanged()
@@ -1062,7 +1061,7 @@ async function main(): Promise<void> {
   const platformMenus = (): MenuItemConstructorOptions[] => darwin
     ? [shortcuts.fileMenu(currentDesktopLocale().messages), { role: 'editMenu' }, { role: 'windowMenu' }]
     : [{ role: 'editMenu' }]
-  const hideCommands: MenuItemConstructorOptions[] = darwin
+  const hideCommands = (): MenuItemConstructorOptions[] => darwin
     ? [{ role: 'hide', label: currentDesktopLocale().messages.hideApplication },
       { role: 'hideOthers', label: currentDesktopLocale().messages.hideOtherApplications },
       { role: 'unhide', label: currentDesktopLocale().messages.showAllApplications }, { type: 'separator' }]
@@ -1099,7 +1098,7 @@ async function main(): Promise<void> {
       } },
     ] : [],
     { type: 'separator' },
-    ...hideCommands,
+    ...hideCommands(),
     { role: 'quit', ...(darwin ? { label: currentDesktopLocale().messages.quitApplication }
       : process.platform === 'win32' ? { label: currentDesktopLocale().messages.exitApplication } : {}) },
   ]
@@ -1337,7 +1336,7 @@ async function main(): Promise<void> {
     if (quitting || recovery.active) return
     const state = await readWelcomeState()
     if (isQuitting() || backend.state.phase !== 'ready') return
-    locale = resolveDesktopStartupLocale(state.localePreference, systemLanguages)
+    locale = resolveDesktopStartupLocale(state.localePreference)
     windowsLanguage = locale.id
     refreshApplicationMenu()
     // Application launch enters the workspace directly; credentials and account

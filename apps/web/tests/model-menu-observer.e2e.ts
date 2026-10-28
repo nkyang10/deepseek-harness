@@ -103,7 +103,7 @@ describe.skipIf(webSnapshotMode() === 'record').each([
   let crashed = false
 
   beforeAll(async () => {
-    scaffold = await launchWebScaffold({ extraOverlayPath: OVERLAY })
+    scaffold = await launchWebScaffold({ localePreference: 'zh', extraOverlayPath: OVERLAY })
     // Catalog-only settings traffic: no prompt, selection, replay fixture, or model request.
     await scaffold.ctx.settings.update('llm-pi-ai', {
       providers: Object.fromEntries(PROVIDERS.map(provider => [provider.id, {

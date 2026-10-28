@@ -39,7 +39,7 @@ describe.skipIf(MODE === 'record')('web e2e: trusted remote host preferences', (
   let tripwire: ReturnType<typeof watchConsole>
 
   beforeAll(async () => {
-    scaffold = await launchWebScaffold({
+    scaffold = await launchWebScaffold({ localePreference: 'zh',
       remoteAuthority: 'remote.localhost',
       welcomeNoticePending: true,
     })

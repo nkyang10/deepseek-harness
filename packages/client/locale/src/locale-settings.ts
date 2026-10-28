@@ -5,7 +5,7 @@ import z from '@deepseek-ai/schemastery'
 /** Settings namespace owned by the locale plugin. */
 export const LOCALE_SETTINGS_NAMESPACE = 'locale'
 
-/** Field carrying an explicit locale selection; absence delegates to the browser. */
+/** Field carrying an explicit locale selection; absence uses English. */
 export const LOCALE_PREFERENCE_FIELD = 'preference'
 
 /** Accepted BCP 47-style language ids. */
@@ -22,7 +22,7 @@ export type LocaleId = string
 
 /** Durable locale section shared by the Host schema and the browser scope. */
 export interface LocaleSettings {
-  /** Explicit locale selection; absence delegates to the browser. */
+  /** Explicit locale selection; absence uses English. */
   preference?: LocaleId
 }
 

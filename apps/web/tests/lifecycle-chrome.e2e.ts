@@ -114,24 +114,26 @@ describe('web e2e: lifecycle & chrome (workspace flow / reload / dark mode)', ()
     await expect.poll(() => menu.count()).toBe(0)
   })
 
-  it.skipIf(MODE === 'record')('localizes slash-command descriptions from the browser language', async () => {
+  it.skipIf(MODE === 'record')('localizes slash-command descriptions from the stored language preference', async () => {
+    const zhScaffold = await launchWebScaffold({ localePreference: 'zh' })
     const zhPage = await browser.newPage({ viewport: { width: 1680, height: 1000 }, locale: ZH_BROWSER_LOCALE })
     const zhTripwire = watchConsole(zhPage)
     onTestFailed(() => saveFailureShot(zhPage, 'web-e2e-command-menu-zh'))
     try {
-      await zhPage.goto(scaffold.authenticatedUrl, { waitUntil: 'load' })
+      await zhPage.goto(zhScaffold.authenticatedUrl, { waitUntil: 'load' })
       await zhPage.waitForSelector('[class*="frame"]', { timeout: 30_000 })
       const launcher = zhPage.getByRole('button', { name: '添加文件或调用指令' })
       await launcher.click()
       const menu = zhPage.getByRole('listbox', { name: '触发候选建议' })
       await menu.getByRole('option').first().waitFor({ timeout: 10_000 })
       await menu.getByRole('status').waitFor({ state: 'hidden', timeout: 10_000 })
-      const snapshot = await captureStableAria(zhPage, '[role="listbox"]', scaffold.workspaceCwd)
+      const snapshot = await captureStableAria(zhPage, '[role="listbox"]', zhScaffold.workspaceCwd)
       await compareOrRefreshGolden(COMMAND_MENU_ZH_EXPECTED, snapshot, MODE)
       expect(zhTripwire.pageErrors).toEqual([])
       expect(zhTripwire.warnings).toEqual([])
     } finally {
       await zhPage.close()
+      await zhScaffold.close()
     }
   })
 
@@ -141,9 +143,16 @@ describe('web e2e: lifecycle & chrome (workspace flow / reload / dark mode)', ()
     { locale: ZH_BROWSER_LOCALE, token: '/目标', row: '目标 goal 设置或查看长期任务目标', hint: '输入目标，智能体将持续执行' },
     { locale: ZH_BROWSER_LOCALE, token: '/计划', row: '计划 plan 进入或退出计划模式', hint: '描述你的任务以生成计划' },
   ])('keeps $token claimed across separator edits and hides hints during IME composition', async ({ locale, token, row, hint }) => {
+    // The language is host-global, so each case pins the stored preference
+    // before its page loads and restores English afterwards for the specs
+    // further down this file.
+    await scaffold.ctx.settings.update('locale', { preference: locale === 'en-US' ? 'en' : 'zh' })
     const inputPage = await browser.newPage({ viewport: { width: 1680, height: 1000 }, locale })
     const inputTripwire = watchConsole(inputPage)
     onTestFailed(() => saveFailureShot(inputPage, `web-e2e-command-input-${locale}-${token.slice(1)}`))
+    onTestFinished(async () => {
+      await scaffold.ctx.settings.update('locale', { preference: 'en' })
+    })
     try {
       await inputPage.goto(scaffold.authenticatedUrl, { waitUntil: 'load' })
       await inputPage.waitForSelector('[class*="frame"]', { timeout: 30_000 })
@@ -276,7 +285,7 @@ describe('web e2e: lifecycle & chrome (workspace flow / reload / dark mode)', ()
   })
 
   it.skipIf(MODE === 'record')('shows the active Plan chip with the Chinese copy', async () => {
-    const zhScaffold = await launchWebScaffold()
+    const zhScaffold = await launchWebScaffold({ localePreference: 'zh' })
     const zhPage = await browser.newPage({ viewport: { width: 1680, height: 1000 }, locale: ZH_BROWSER_LOCALE })
     const zhTripwire = watchConsole(zhPage)
     try {

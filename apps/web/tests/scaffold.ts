@@ -306,6 +306,11 @@ export interface WebScaffold {
 export interface LaunchOptions {
   /** Override the developer-tools preference; omitted uses the shipped default. */
   developerTools?: boolean
+  /**
+   * Persist `locale.preference` in the harness home before any page connects,
+   * so scenarios boot in a stored language instead of the English default.
+   */
+  localePreference?: 'zh' | 'en'
   /** Enable the real Open In rows with deterministic launch-environment facts. */
   openInAppEnvironment?: LaunchEnvironmentSnapshot
   /** Compare the replayed root Session; `read-only` also forbids refresh writes to a borrowed fixture. */
@@ -834,6 +839,9 @@ export async function launchWebScaffold(options: LaunchOptions = {}): Promise<We
     await auditStartupEntries(ctx, 'web e2e scaffold')
     if (options.developerTools !== undefined) {
       await ctx.settings.update('ui-settings', { enabled: options.developerTools })
+    }
+    if (options.localePreference !== undefined) {
+      await ctx.settings.update('locale', { preference: options.localePreference })
     }
     if (options.welcomeNoticePending !== true) {
       await ctx.settings.mutate(WELCOME_NOTICE_SETTINGS_NAMESPACE, [{

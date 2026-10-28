@@ -6,9 +6,7 @@ import { describe, expect, it, vi } from 'vitest'
 import { AttachmentId } from '@deepseek-ai/dsh-attachment'
 import type { ISession, SessionReference } from '@deepseek-ai/dsh-api-session-controller/client'
 import { LocaleRuntime } from '@deepseek-ai/dsh-client-locale/client'
-import {
-  SlotTestRuntime, stubConfigForm, usePinnedBrowserLanguages,
-} from '@deepseek-ai/dsh-client-test-runtime'
+import { bootLocale, SlotTestRuntime, stubConfigForm } from '@deepseek-ai/dsh-client-test-runtime'
 import type { SessionBehaviorOverrides } from '@deepseek-ai/dsh-client-test-runtime'
 import type { ClientRemote } from '@deepseek-ai/dsh-api-remotes/client'
 import {
@@ -25,7 +23,7 @@ import { CHAT_SETTINGS_NAMESPACE, type ChatSettings } from '../src/chat-settings
 import type { LinkOpeningRowInjected } from '../src/client/settings/LinkOpeningRow.tsx'
 import type { TranscriptViewRowInjected } from '../src/client/settings/TranscriptViewRow.tsx'
 
-usePinnedBrowserLanguages('zh-CN')
+const LOCALE_BOOT = bootLocale('zh-CN')
 
 const ROOT = 'root-1' as SessionId
 const ATTACHMENT = {
@@ -95,7 +93,7 @@ async function bench(initialSettings?: ChatSettings, withBrowserRegistry = true,
   })
   const rootReference = runtime.sessions.retain(ROOT)
   await rootReference.ready
-  const locale = new LocaleRuntime(runtime.ctx)
+  const locale = new LocaleRuntime(runtime.ctx, undefined, LOCALE_BOOT)
   runtime.ctx.provide('locale', locale)
   runtime.slots.installLocale(locale)
   await runtime.root.declare({

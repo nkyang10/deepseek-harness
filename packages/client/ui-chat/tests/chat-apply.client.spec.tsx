@@ -3,9 +3,7 @@ import { createSnapshotStore } from '@deepseek-ai/dsh-client-store'
 import { describe, expect, it, onTestFinished, vi } from 'vitest'
 import { act, fireEvent, render } from '@testing-library/react'
 import { useRef } from 'react'
-import {
-  SlotTestRuntime, stubConfigForm, usePinnedBrowserLanguages,
-} from '@deepseek-ai/dsh-client-test-runtime'
+import { bootLocale, SlotTestRuntime, stubConfigForm } from '@deepseek-ai/dsh-client-test-runtime'
 import { LocaleRuntime } from '@deepseek-ai/dsh-client-locale/client'
 import { resolveSlotLabel } from '@deepseek-ai/dsh-client-ui-slots'
 import type { ObservableSnapshot } from '@deepseek-ai/dsh-client-store'
@@ -38,7 +36,7 @@ declare module '@deepseek-ai/dsh-client-ui-conversation/client' {
   }
 }
 
-usePinnedBrowserLanguages('zh-CN')
+const LOCALE_BOOT = bootLocale('zh-CN')
 
 const SID = 'session-1' as SessionId
 
@@ -70,7 +68,7 @@ async function bench() {
   runtime.remote.provideNamespaces({
     session: { openWorkspacePath: vi.fn(async () => ({ ok: true, value: { opened: true } })) },
   })
-  const locale = new LocaleRuntime(runtime.ctx)
+  const locale = new LocaleRuntime(runtime.ctx, undefined, LOCALE_BOOT)
   runtime.ctx.provide('locale', locale)
   runtime.slots.installLocale(locale)
   await runtime.root.declare({

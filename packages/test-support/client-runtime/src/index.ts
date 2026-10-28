@@ -60,7 +60,7 @@ export type {
 export { makeTranslate } from './translate.ts'
 export { allowAllAccess, allowAllAccessPlugin } from './access.ts'
 export type { AccessStandardProps } from './access.ts'
-export { usePinnedBrowserLanguages } from './locale-env.ts'
+export { bootLocale } from './locale-env.ts'
 
 /**
  * Bind an observable source to the production renderer's selector hook.

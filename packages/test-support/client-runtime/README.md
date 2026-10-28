@@ -129,7 +129,7 @@ The bench copies no production logic: it mounts the production `SlotRegistry`, p
 | [`src/snapshot.ts`](src/snapshot.ts) | DOM snapshot serializer (class-hash folding, `<svg>` fingerprint) |
 | [`src/access.ts`](src/access.ts) | `allowAllAccess` props and `allowAllAccessPlugin`, the allow-all stand-in for the remote-access Client row |
 | [`src/remote.ts`](src/remote.ts) | `TestRemote` double for host RPC, `RemoteError` value re-export |
-| [`src/translate.ts`](src/translate.ts) + [`src/locale-env.ts`](src/locale-env.ts) | Translation and pinned-browser-language test helpers |
+| [`src/translate.ts`](src/translate.ts) + [`src/locale-env.ts`](src/locale-env.ts) | Translation and boot-locale test helpers |
 | [`src/config-form.ts`](src/config-form.ts) | `stubConfigForm` with test-driven publications and write spies |
 | [`src/assembly/roster.ts`](src/assembly/roster.ts) | `ClientRosterRow`, `ClientRoster` (`of`/`closure`/`pick`/`without`), the `AssemblyPlan` it annotates, and `graphFromRoster` |
 | [`src/assembly/modules.ts`](src/assembly/modules.ts) | Source `/client` imports and replacements, registered through the production module facade's pending factory queue |

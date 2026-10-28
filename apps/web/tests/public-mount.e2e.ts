@@ -21,7 +21,7 @@ describe.skipIf(MODE === 'record')('web e2e: public mount through a prefix-strip
   const muxFrames: string[] = []
 
   beforeAll(async () => {
-    scaffold = await launchWebScaffold({
+    scaffold = await launchWebScaffold({ localePreference: 'zh',
       publicMount: { prefix: MOUNT },
       welcomeNoticePending: true,
     })

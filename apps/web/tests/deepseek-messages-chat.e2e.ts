@@ -23,7 +23,7 @@ describe.skipIf(MODE === 'record')('web e2e: DeepSeek Messages conversation', ()
 
   beforeAll(async () => {
     replayFixture = await selectedSessionFixture(FIXTURE, false)
-    scaffold = await launchWebScaffold({
+    scaffold = await launchWebScaffold({ localePreference: 'zh',
       replayFixture,
       paceMs: 5,
       replayProviders: [{

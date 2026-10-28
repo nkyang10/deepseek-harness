@@ -34,7 +34,7 @@ describe('web e2e: plugin configuration pages', () => {
   beforeAll(async () => {
     // The live-client fixture is a bundle with a browser half; switched on
     // below, that half registers its row's configuration into the page.
-    scaffold = await launchWebScaffold({
+    scaffold = await launchWebScaffold({ localePreference: 'zh',
       extraOverlayPath: fileURLToPath(new URL('./pin-browse-picker.overlay.yml', import.meta.url)),
       deepSeekSearch: { apiKeyEnv: 'DSH_PLUGIN_CONFIG_E2E_UNUSED_KEY' },
       profile: { packages: [{ dir: join(FIXTURE_PLUGINS, 'fixture-live-client') }] },

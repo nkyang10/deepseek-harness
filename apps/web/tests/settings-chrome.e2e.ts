@@ -49,11 +49,12 @@ describe('web e2e: settings modal and General preferences', () => {
   beforeAll(async () => {
     scaffold = await launchWebScaffold({
       developerTools: false,
+      localePreference: 'zh',
       extraOverlayPath: fileURLToPath(new URL('./pin-browse-picker.overlay.yml', import.meta.url)),
     })
     browser = await chromium.launch()
-    // Chinese browser: the shared page asserts the localized settings surface
-    // the client derives from it (the English default has its own spec below).
+    // The stored zh preference drives the localized settings surface this
+    // shared page asserts (the English default has its own specs below).
     page = await browser.newPage({ viewport: { width: 1680, height: 1000 }, locale: ZH_BROWSER_LOCALE })
     tripwire = watchConsole(page)
     await page.goto(scaffold.authenticatedUrl, { waitUntil: 'load' })
@@ -715,12 +716,12 @@ describe('web e2e: settings modal and General preferences', () => {
     await openSettings(page, 'zh')
     const dialog = page.getByRole('dialog', { name: '设置' })
     await dialog.waitFor({ timeout: 10_000 })
-    await dialog.getByRole('button', { name: '排队发送' }).click()
-    await page.getByRole('menuitem', { name: '插话发送' }).click()
-    await dialog.getByRole('button', { name: '插话发送' }).waitFor({ timeout: 10_000 })
+    await dialog.getByRole('button', { name: '插话发送' }).click()
+    await page.getByRole('menuitem', { name: '排队发送' }).click()
+    await dialog.getByRole('button', { name: '排队发送' }).waitFor({ timeout: 10_000 })
     expect(await page.evaluate(() => localStorage.getItem('dsh.conversation.busyEnter'))).toBeNull()
     await expect.poll(async () => readFile(join(scaffold.harnessHome, 'profiles', 'scaffold', 'cordis.patch.yml'), 'utf8'), { timeout: 5_000 })
-      .toContain('busyEnter: steer')
+      .toContain('busyEnter: queue')
     await page.keyboard.press('Escape')
 
     const warningStart = tripwire.warnings.length
@@ -729,7 +730,7 @@ describe('web e2e: settings modal and General preferences', () => {
     acknowledgeReloadConnectionLoss(tripwire, warningStart)
     await openSettings(page, 'zh')
     const reloaded = page.getByRole('dialog', { name: '设置' })
-    await reloaded.getByRole('button', { name: '插话发送' }).waitFor({ timeout: 10_000 })
+    await reloaded.getByRole('button', { name: '排队发送' }).waitFor({ timeout: 10_000 })
 
     const second = await launchWebScaffold({ developerTools: false, harnessHome: scaffold.harnessHome })
     const secondPage = await browser.newPage({ viewport: { width: 1680, height: 1000 }, locale: ZH_BROWSER_LOCALE })
@@ -740,7 +741,7 @@ describe('web e2e: settings modal and General preferences', () => {
       await secondPage.waitForSelector('[class*="frame"]', { timeout: 30_000 })
       await openSettings(secondPage, 'zh')
       await secondPage.getByRole('dialog', { name: '设置' })
-        .getByRole('button', { name: '插话发送' }).waitFor({ timeout: 10_000 })
+        .getByRole('button', { name: '排队发送' }).waitFor({ timeout: 10_000 })
       expect(await secondPage.evaluate(() => localStorage.getItem('dsh.conversation.busyEnter'))).toBeNull()
       expect(secondTripwire.pageErrors).toEqual([])
       expect(secondTripwire.warnings).toEqual([])
@@ -749,12 +750,12 @@ describe('web e2e: settings modal and General preferences', () => {
       await second.close()
     }
 
-    await reloaded.getByRole('button', { name: '插话发送' }).click()
-    await page.getByRole('menuitem', { name: '排队发送' }).click()
-    await reloaded.getByRole('button', { name: '排队发送' }).waitFor({ timeout: 10_000 })
+    await reloaded.getByRole('button', { name: '排队发送' }).click()
+    await page.getByRole('menuitem', { name: '插话发送' }).click()
+    await reloaded.getByRole('button', { name: '插话发送' }).waitFor({ timeout: 10_000 })
     expect(await page.evaluate(() => localStorage.getItem('dsh.conversation.busyEnter'))).toBeNull()
     await expect.poll(async () => readFile(join(scaffold.harnessHome, 'profiles', 'scaffold', 'cordis.patch.yml'), 'utf8'), { timeout: 5_000 })
-      .toContain('busyEnter: queue')
+      .toContain('busyEnter: steer')
     await page.keyboard.press('Escape')
     expect(tripwire.pageErrors).toEqual([])
   }, 90_000)
@@ -765,7 +766,7 @@ describe('web e2e: settings modal and General preferences', () => {
     const zhDialog = page.getByRole('dialog', { name: '设置' })
     await zhDialog.waitFor({ timeout: 10_000 })
     // The document language follows the active locale in the assembled app, not
-    // only on a directly-mounted plugin. This is a zh browser, so the served
+    // only on a directly-mounted plugin. This home stores zh, so the served
     // markup's `en` must already have been replaced — asserting it here (rather
     // than only in an English scenario) is what makes the check discriminating.
     expect(await page.evaluate(() => document.documentElement.lang)).toBe('zh-CN')
@@ -788,7 +789,8 @@ describe('web e2e: settings modal and General preferences', () => {
     await expect.poll(async () => readFile(join(scaffold.harnessHome, 'profiles', 'scaffold', 'cordis.patch.yml'), 'utf8'), { timeout: 5_000 })
       .toContain('preference: en')
     // Reload keeps English; then restore zh so shared page state (and the
-    // other specs' 设置-anchored selectors + goldens) see the default again.
+    // other specs' 设置-anchored selectors + goldens) see the stored value
+    // again.
     const warningStart = tripwire.warnings.length
     await page.reload({ waitUntil: 'load' })
     await page.waitForSelector('[class*="frame"]', { timeout: 30_000 })
@@ -828,10 +830,9 @@ describe('web e2e: settings modal and General preferences', () => {
   }, 90_000)
 
   it('opens an English browser in English without any stored preference', async () => {
-    // A fresh Host home has no locale preference, so its surface follows the
-    // browser. English is also FALLBACK_LOCALE, so this scenario alone cannot
-    // distinguish detection from the default — the zh scenarios above supply
-    // the discriminating half (a Chinese browser must NOT land on the default).
+    // A fresh Host home has no locale preference, so the surface opens on the
+    // English default. The zh-browser scenario below is the discriminating
+    // half (a Chinese browser must also land on the default).
     const fresh = await launchWebScaffold({ developerTools: false })
     const enPage = await browser.newPage({ viewport: { width: 1680, height: 1000 }, locale: 'en-US' })
     const enTripwire = watchConsole(enPage)
@@ -867,12 +868,11 @@ describe('web e2e: settings modal and General preferences', () => {
     }
   }, 90_000)
 
-  it('opens a browser asking for no shipped language in English', async () => {
-    // The product default for "no usable signal": a French browser ships
-    // neither zh nor en, so resolution falls to FALLBACK_LOCALE (en) rather
-    // than to Chinese.
+  it('opens a Chinese browser in English without any stored preference', async () => {
+    // The product default ignores the browser language: a Chinese browser on a
+    // fresh home opens English, not Chinese.
     const fresh = await launchWebScaffold({ developerTools: false })
-    const frPage = await browser.newPage({ viewport: { width: 1680, height: 1000 }, locale: 'fr-FR' })
+    const frPage = await browser.newPage({ viewport: { width: 1680, height: 1000 }, locale: ZH_BROWSER_LOCALE })
     const frTripwire = watchConsole(frPage)
     onTestFailed(() => saveSettingsFailureShot(frPage, 'settings-unshipped-language'))
     try {
@@ -890,7 +890,7 @@ describe('web e2e: settings modal and General preferences', () => {
       // so a future change that resolves en but writes the wrong tag is caught.
       expect(await frPage.evaluate(() => document.documentElement.lang)).toBe('en')
       // Golden of the English fallback dialog — the visible output this change
-      // produces. The zh golden above covers the detected-locale surface, so
+      // produces. The zh golden above covers the stored-preference surface, so
       // the pair pins both directions of the resolution.
       await dialog.getByText(`Current version: ${version}`, { exact: true }).waitFor()
       const snapshot = await captureStableAria(frPage, '[role="dialog"]', fresh.workspaceCwd, versionCapture)
@@ -976,6 +976,7 @@ describe('web e2e: Host-backed collapse timing preference', () => {
       colorScheme: copy.theme, timezoneId: 'Asia/Shanghai',
     }
     await scaffold.ctx.settings.update('ui-chat', { collapseTiming: 'completion' })
+    await scaffold.ctx.settings.update('locale', { preference: copy.locale })
     const context = await browser.newContext(contextOptions)
     onTestFinished(() => context.close())
     const page = await context.newPage()

@@ -140,12 +140,12 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
       },
       {
         signature: 'setLocale(id: string): void',
-        description: 'Switch the active locale — the only user preference write entry.\n\nThe durable write happens even when the id already matches the active locale, because the active value may be a provisional browser-derived or fallback resolution that nothing has stored yet. Picking the language already on screen is still an explicit choice, and it must survive a different browser sharing the same DSH home. Only the render notification is conditional: republishing an unchanged locale would churn every subscriber for nothing.',
+        description: 'Switch the active locale — the only user preference write entry.\n\nThe durable write happens even when the id already matches the active locale, because the active value may be the unstored English default. Picking the language already on screen is still an explicit choice, and it must survive a different browser sharing the same DSH home. Only the render notification is conditional: republishing an unchanged locale would churn every subscriber for nothing.',
         parameters: [{ name: 'id', description: 'a registered locale id; unknown ids throw.' }],
       },
       {
         signature: 'addLanguage(input: LanguageRegistration): () => void',
-        description: 'Add one selectable language to the shared catalog. Its fallback must already be registered, and following fallback definitions must terminate at English. Dictionaries may register before or after this definition. Registration rechecks an unresolved Host preference and the browser\'s ordered language list. The caller owns the returned disposer; removing an active language falls back without clearing the stored id.',
+        description: 'Add one selectable language to the shared catalog. Its fallback must already be registered, and following fallback definitions must terminate at English. Dictionaries may register before or after this definition. Registration rechecks an unresolved Host preference. The caller owns the returned disposer; removing an active language falls back without clearing the stored id.',
         parameters: [{ name: 'input', description: 'stable id, self-described label, and fallback language id.' }],
         returns: 'idempotent disposer removing this exact definition.',
         throws: ['when fields are malformed, the id is occupied, or the fallback target is unknown or creates a cycle.'],

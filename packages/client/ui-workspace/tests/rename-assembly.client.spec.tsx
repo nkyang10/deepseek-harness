@@ -20,21 +20,21 @@ import type { ISession } from '@deepseek-ai/dsh-api-session-controller/client'
 import type { WorkspaceId } from '@deepseek-ai/dsh-api-workspace-controller/client'
 import { SessionSeq, type SessionId } from '@deepseek-ai/dsh-session/types'
 import type { PropsRenderSlots, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
-import { RemoteError, SlotTestRuntime, usePinnedBrowserLanguages } from '@deepseek-ai/dsh-client-test-runtime'
+import { bootLocale, RemoteError, SlotTestRuntime } from '@deepseek-ai/dsh-client-test-runtime'
 import { LocaleRuntime } from '@deepseek-ai/dsh-client-locale/client'
 import { MenuItemButton } from '@deepseek-ai/dsh-client-ui-primitives'
 import { apply, inject } from '@deepseek-ai/dsh-client-ui-workspace/client'
 
-// The service reads its initial locale from the browser; these specs assert
-// the shipped Chinese copy, so they state the browser they assume.
-usePinnedBrowserLanguages('zh-CN')
+// The UI opens on English until a stored preference arrives; these specs
+// assert the shipped Chinese copy, so they boot with the Chinese preference.
+const LOCALE_BOOT = bootLocale('zh-CN')
 
 const SID = 's1' as SessionId
 
 afterEach(cleanup)
 beforeEach(() => { localStorage.clear() })
 
-/** Runtime with the locale face installed (the browser entry declares `locale:` — zh default backs the t seat). */
+/** Runtime with the locale face installed (the zh preference boot backs the t seat). */
 async function createRuntime(): Promise<SlotTestRuntime> {
   const runtime = await SlotTestRuntime.create()
   runtime.ctx.provide('shortcuts', { register: () => () => {}, catalog: createSnapshotStore([]) })
@@ -44,7 +44,7 @@ async function createRuntime(): Promise<SlotTestRuntime> {
   // for ui-workspace's inject to settle.
   const directoryPicker = {}
   runtime.remote.provideNamespaces({ directoryPicker })
-  const locale = new LocaleRuntime(runtime.ctx)
+  const locale = new LocaleRuntime(runtime.ctx, undefined, LOCALE_BOOT)
   runtime.ctx.provide('locale', locale)
   runtime.slots.installLocale(locale)
   return runtime

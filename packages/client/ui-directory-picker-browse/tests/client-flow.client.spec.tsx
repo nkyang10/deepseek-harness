@@ -5,15 +5,15 @@ import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/re
 import type { DirectoryListing } from '@deepseek-ai/dsh-api-remotes/client'
 import { SlotRegistry } from '@deepseek-ai/dsh-client-ui-renderer/client'
 import { LocaleRuntime } from '@deepseek-ai/dsh-client-locale/client'
-import { usePinnedBrowserLanguages } from '@deepseek-ai/dsh-client-test-runtime'
+import { bootLocale } from '@deepseek-ai/dsh-client-test-runtime'
 import type { DirectoryFlowOwnerProps } from '@deepseek-ai/dsh-client-ui-workspace/client'
 import { apply, inject } from '../src/client/index.ts'
 import { BrowseDirectoryFlow } from '../src/client/flow.ts'
 import { apply as nodeApply } from '../src/index.ts'
 
-// The service reads its initial locale from the browser; these specs assert
-// the shipped Chinese copy, so they state the browser they assume.
-usePinnedBrowserLanguages('zh-CN')
+// The UI opens on English until a stored preference arrives; these specs
+// assert the shipped Chinese copy, so they boot with the Chinese preference.
+const LOCALE_BOOT = bootLocale('zh-CN')
 
 afterEach(cleanup)
 
@@ -31,7 +31,7 @@ const homeListing: DirectoryListing = {
 async function bench() {
   const ctx = new Context()
   await ctx.plugin(SlotRegistry).await()
-  ctx.provide('locale', new LocaleRuntime(ctx))
+  ctx.provide('locale', new LocaleRuntime(ctx, undefined, LOCALE_BOOT))
   const listDirectory = vi.fn(async (): Promise<DirectoryListing> => homeListing)
   const createDirectory = vi.fn(async (path: string, name: string) => `${path}/${name}`)
   ctx.provide('uiWorkspace', { listDirectory, createDirectory } as never)
@@ -167,7 +167,7 @@ describe('directory-picker-browse client half', () => {
     await b.ctx.plugin({ inject: [...inject], apply }).await()
     const entry = b.slots.entries(HOLES[0])[0]!
     const injected = (entry.inject as () => { t: (key: string) => string })()
-    // zh is the shipped default locale.
+    // The spec boots with the stored zh preference.
     expect(injected.t('browser.title')).toBe('选择工作区目录')
     expect(injected.t('browser.newFolder')).toBe('新建文件夹')
     expect(injected.t('browser.showHidden')).toBe('显示隐藏文件')

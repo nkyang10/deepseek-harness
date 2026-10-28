@@ -148,7 +148,7 @@ it.skipIf(MODE === 'record')('persists Bing reasoning translation across reopen 
     // The provider deadline must exceed the cancellation observation's 10-second bound.
     timeoutMs: 120_000,
   })}\n`)
-  const scaffold = await launchWebScaffold({
+  const scaffold = await launchWebScaffold({ localePreference: 'zh',
     profile: { packages: [{ dir: BUNDLE }] },
     extraOverlayPath: overlay,
     replayFixture: FIXTURE,

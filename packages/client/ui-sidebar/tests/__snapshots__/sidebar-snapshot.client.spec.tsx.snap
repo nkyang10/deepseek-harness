@@ -486,7 +486,7 @@ exports[`sidebar shell snapshots > renders the expanded column (wordmark, capsul
 </div>
 `;
 
-exports[`sidebar shell snapshots > renders the expanded column in the default locale (zh, no setLocale) 1`] = `
+exports[`sidebar shell snapshots > renders the expanded column from the stored zh preference 1`] = `
 <div
   data-slot="sidebar"
   style="display: contents;"

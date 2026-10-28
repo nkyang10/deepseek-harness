@@ -1,4 +1,4 @@
-// Native initialization supplies system languages; the existing Host preference remains the only durable choice.
+// The Host preference is the only durable language choice; nothing is stored before an explicit one.
 import { readFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -15,7 +15,7 @@ const MODE = webSnapshotMode()
 const { version } = JSON.parse(await readFile(new URL('../../../package.json', import.meta.url), 'utf8')) as { version: string }
 const versionCapture = { replacements: [[version, '{{version}}']] as const }
 
-describe.skipIf(MODE === 'record')('web e2e: native and Client locale preferences', () => {
+describe.skipIf(MODE === 'record')('web e2e: desktop locale preference', () => {
   let scaffold: WebScaffold
   let browser: Browser
   let page: Page
@@ -29,7 +29,7 @@ describe.skipIf(MODE === 'record')('web e2e: native and Client locale preference
     tripwire = watchConsole(page)
     await page.exposeFunction('nativeLocaleRead', () => {
       const section = scaffold.ctx.settings.describe().find(row => row.ns === 'locale')!.value as { preference?: string }
-      return { languages: ['ja-JP', 'zh-CN', 'en-US'], preference: section.preference ?? null }
+      return { preference: section.preference ?? null }
     })
     await page.exposeFunction('nativeLocaleChanged', (locale: string) => { reported.push(locale) })
     await page.addInitScript(() => {
@@ -51,33 +51,35 @@ describe.skipIf(MODE === 'record')('web e2e: native and Client locale preference
     await scaffold?.close()
   })
 
-  it('uses OS languages without saving them, then shares an explicit choice across reloads', async () => {
+  it('opens the English default without saving anything, then shares an explicit choice across reloads', async () => {
     onTestFailed(() => saveFailureShot(page, 'web-e2e-desktop-locale'))
     await page.goto(scaffold.authenticatedUrl, { waitUntil: 'load' })
-    await openSettings(page, 'zh')
-    const zhDialog = page.getByRole('dialog', { name: '设置', exact: true })
-    await zhDialog.getByRole('button', { name: '中文', exact: true }).waitFor()
-    await expect.poll(() => reported).toEqual(['zh'])
+    await openSettings(page, 'en')
+    const enDialog = page.getByRole('dialog', { name: 'Settings', exact: true })
+    await enDialog.getByRole('button', { name: 'English', exact: true }).waitFor()
+    // The active locale is announced to the native side at boot, and no
+    // preference is stored for it.
+    await expect.poll(() => reported).toEqual(['en'])
     expect(scaffold.ctx.settings.describe().find(row => row.ns === 'locale')!.value).toEqual({})
     await compareOrRefreshGolden(join(SNAPSHOT_DIR, 'automatic.expected.md'),
       await captureStableAria(page, '[role="dialog"]', scaffold.workspaceCwd, versionCapture), MODE)
-    await zhDialog.getByRole('button', { name: '中文', exact: true }).click()
-    await page.getByRole('menuitem', { name: 'English', exact: true }).click()
-    const enDialog = page.getByRole('dialog', { name: 'Settings', exact: true })
-    await enDialog.getByRole('button', { name: 'English', exact: true }).waitFor()
-    await expect.poll(() => reported.at(-1)).toBe('en')
+    await enDialog.getByRole('button', { name: 'English', exact: true }).click()
+    await page.getByRole('menuitem', { name: '中文', exact: true }).click()
+    const zhDialog = page.getByRole('dialog', { name: '设置', exact: true })
+    await zhDialog.getByRole('button', { name: '中文', exact: true }).waitFor()
+    await expect.poll(() => reported.at(-1)).toBe('zh')
     await expect.poll(() => readFile(join(scaffold.harnessHome, 'profiles', 'scaffold', 'cordis.patch.yml'), 'utf8'))
-      .toContain('preference: en')
+      .toContain('preference: zh')
     await compareOrRefreshGolden(join(SNAPSHOT_DIR, 'selected.expected.md'),
       await captureStableAria(page, '[role="dialog"]', scaffold.workspaceCwd, versionCapture), MODE)
     const warningsBefore = tripwire.warnings.length
     reported.length = 0
     await page.reload({ waitUntil: 'load' })
     acknowledgeReloadConnectionLoss(tripwire, warningsBefore)
-    await openSettings(page, 'en')
-    await enDialog.getByRole('button', { name: 'English', exact: true }).waitFor()
-    await expect.poll(() => reported).toEqual(['en'])
-    expect(await page.evaluate(() => document.documentElement.lang)).toBe('en')
+    await openSettings(page, 'zh')
+    await zhDialog.getByRole('button', { name: '中文', exact: true }).waitFor()
+    await expect.poll(() => reported).toEqual(['zh'])
+    expect(await page.evaluate(() => document.documentElement.lang)).toBe('zh-CN')
     expect(await page.evaluate(() => localStorage.getItem('dsh.locale'))).toBeNull()
     expect(tripwire.warnings).toEqual([])
     expect(tripwire.pageErrors).toEqual([])
