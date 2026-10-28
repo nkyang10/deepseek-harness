@@ -238,7 +238,7 @@ export interface Config {
 
 ## `@deepseek-ai/dsh-api-settings-controller`
 
-- `source`: [`packages/api/settings-controller/src/index.ts:35`](../packages/api/settings-controller/src/index.ts)
+- `source`: [`packages/api/settings-controller/src/index.ts:42`](../packages/api/settings-controller/src/index.ts)
 
 ```ts config-catalog
 /** Host integrations replaceable by direct unit tests. */
@@ -435,7 +435,8 @@ export type Config = LocalConfig
 ## `@deepseek-ai/dsh-client-connection`
 
 - `inject`: `credentials`
-- `source`: [`packages/client/connection/src/index.ts:97`](../packages/client/connection/src/index.ts)
+- `refs`: `Volatile` (`@deepseek-ai/cordis`)
+- `source`: [`packages/client/connection/src/index.ts:100`](../packages/client/connection/src/index.ts)
 
 ```ts config-catalog
 /** Browser authentication, request limits, and connection recovery configuration. */
@@ -451,6 +452,12 @@ export interface ConnectionConfig {
   trustedHosts?: string[]
   /** Absolute browser and API cookie lifetime in days. Default: 30. */
   cookieMaxAgeDays?: number
+  /**
+   * Owner-configured login passcode for the unauthenticated Web page. At least
+   * eight characters; a configured passcode is offered beside the durable
+   * pairing link. Unset by default.
+   */
+  passcode?: Volatile<string | undefined>
   /** Maximum buffered JSON body for every `/api` request. Default: 300 MiB. */
   maxRequestBodyBytes?: number
 }
@@ -611,7 +618,11 @@ export type OnboardingProcess = 'compact' | 'standard' | 'detailed'
 ```ts config-catalog
 /** Onboarding options after schema defaults are applied. */
 export interface Config {
-  /** Offer the browser API-key step when no native shell owns credential onboarding. */
+  /**
+   * Offer the browser API-key step when no native shell owns credential
+   * onboarding. Pages rendered for a LAN client never receive the automatic
+   * step; credential entry there stays available from the Models page.
+   */
   credentialOnboarding: boolean
 }
 ```
@@ -1647,7 +1658,7 @@ export interface Config {
 
 ## `@deepseek-ai/dsh-host-webserver`
 
-- `source`: [`packages/host/webserver/src/index.ts:76`](../packages/host/webserver/src/index.ts)
+- `source`: [`packages/host/webserver/src/index.ts:86`](../packages/host/webserver/src/index.ts)
 
 ```ts config-catalog
 /** Web server listen, TLS, and response-compression config. */

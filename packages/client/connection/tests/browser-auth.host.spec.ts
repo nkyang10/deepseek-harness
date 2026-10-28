@@ -74,6 +74,39 @@ function request(url: string, authority = '127.0.0.1:3080', init?: {
   }
 }
 
+/** Create authentication over one store whose passcode the test may change. */
+function passcodeAuth(store: RecordCredentials, initial: string | undefined = 'correct-horse') {
+  let current: string | undefined = initial
+  return {
+    set(value: string | undefined) { current = value },
+    auth: BrowserAuth.create(credentials(store), 30, { get: () => current }),
+  }
+}
+
+/** Submit a passcode form, defaulting to the same-authority browser form. */
+function submit(init: {
+  authority?: string
+  remoteAddress?: string
+  passcode?: string
+  body?: string
+  contentType?: string
+} = {}): ConnectionIndexRequest {
+  const body = init.body ?? (init.passcode === undefined
+    ? undefined
+    : new URLSearchParams({ passcode: init.passcode }).toString())
+  return {
+    method: 'POST',
+    url: '/',
+    ...init.remoteAddress === undefined ? {} : { remoteAddress: init.remoteAddress },
+    headers: {
+      ...init.authority === undefined ? {} : { host: init.authority },
+      'content-type': init.contentType ?? 'application/x-www-form-urlencoded',
+      ...init.authority === undefined ? {} : { origin: `http://${init.authority}` },
+    },
+    ...body === undefined ? {} : { body },
+  }
+}
+
 /** Exchange the pairing code the way a browser opening the shared link does. */
 async function exchange(
   auth: BrowserAuth,
@@ -554,5 +587,163 @@ describe('BrowserAuth', () => {
     const anonymous = await createAuth(new RecordCredentials())
     await exchange(anonymous)
     expect((await anonymous.listSessions())[0]!.userAgent).toBe('')
+  })
+})
+
+describe('passcode login', () => {
+  const AUTHORITY = '192.168.1.162:9445'
+
+  it('serves the passcode page to an unauthenticated browser and keeps plain 401 without a passcode', async () => {
+    const auth = await passcodeAuth(new RecordCredentials()).auth
+    const page = response()
+    expect(await auth.authorizeIndex(request('/', AUTHORITY), page.value)).toBe(false)
+    expect(page.state.status).toBe(401)
+    expect(page.state.headers).toEqual({
+      'cache-control': 'no-store',
+      'content-type': 'text/html; charset=utf-8',
+      'content-security-policy': "default-src 'none'; style-src 'unsafe-inline'; form-action 'self'; frame-ancestors 'none'",
+      'referrer-policy': 'no-referrer',
+    })
+    expect(page.state.body).toContain('<form method="post" action="./">')
+    expect(page.state.body).toContain('id="passcode" name="passcode" type="password"')
+    expect(page.state.body).not.toContain('class="error"')
+
+    const head = response()
+    expect(await auth.authorizeIndex(request('/', AUTHORITY, { method: 'HEAD' }), head.value)).toBe(false)
+    expect(head.state.status).toBe(401)
+    expect(head.state.body).toBeUndefined()
+    expect(head.state.headers?.['content-type']).toBe('text/html; charset=utf-8')
+
+    const bare = await BrowserAuth.create(credentials(new RecordCredentials()), 30)
+    const blank = await passcodeAuth(new RecordCredentials(), '').auth
+    for (const auth of [bare, blank]) {
+      for (const candidate of [request('/', AUTHORITY), submit({ authority: AUTHORITY })]) {
+        const denied = response()
+        expect(await auth.authorizeIndex(candidate, denied.value)).toBe(false)
+        expect(denied.state).toEqual({
+          status: 401,
+          headers: { 'cache-control': 'no-store', 'content-type': 'text/plain; charset=utf-8' },
+          body: candidate.method === 'HEAD' ? undefined : UNAUTHORIZED_BODY,
+        })
+      }
+    }
+  })
+
+  it('pairs a browser on the matching passcode and rejects malformed submissions', async () => {
+    const store = new RecordCredentials()
+    const auth = await passcodeAuth(store).auth
+
+    const submissions = [
+      [{ passcode: 'wrong' }, 401, 'Incorrect passcode. Try again.'],
+      [{ body: 'passcode=' }, 401, 'Incorrect passcode. Try again.'],
+      [{ body: 'other=value' }, 400, 'The passcode form was not submitted correctly.'],
+      [{ contentType: 'text/plain' }, 400, 'The passcode form was not submitted correctly.'],
+      [{ body: `passcode=${'a'.repeat(4_096)}` }, 400, 'The passcode form was not submitted correctly.'],
+    ] as const
+    for (const [body, status, error] of submissions) {
+      const denied = response()
+      expect(await auth.authorizeIndex(submit({
+        authority: AUTHORITY, remoteAddress: '10.0.0.1', ...body,
+      }), denied.value)).toBe(false)
+      expect(denied.state.status).toBe(status)
+      expect(denied.state.body).toContain(error)
+    }
+
+    // Neither a socket address nor an authority leaves only the fallback key.
+    const unaddressed = response()
+    expect(await auth.authorizeIndex(submit({ body: 'passcode=wrong' }), unaddressed.value)).toBe(false)
+    expect(unaddressed.state.status).toBe(400)
+    expect(unaddressed.state.body).toContain('The passcode form was not submitted correctly.')
+
+    // Without a socket address the authority keys the attempt table.
+    const noPeer = response()
+    expect(await auth.authorizeIndex(submit({
+      authority: AUTHORITY, passcode: 'wrong',
+    }), noPeer.value)).toBe(false)
+    expect(noPeer.state.status).toBe(401)
+
+    const allowed = response()
+    expect(await auth.authorizeIndex(submit({
+      authority: AUTHORITY, remoteAddress: '10.0.0.1', passcode: 'correct-horse',
+    }), allowed.value)).toBe(false)
+    expect(allowed.state).toMatchObject({ status: 303, headers: { location: './' } })
+    const cookie = allowed.state.headers?.['set-cookie']?.split(';', 1)[0]
+    if (cookie === undefined) throw new Error('passcode pairing did not set a cookie')
+    expect(auth.isAuthenticated(request('/', AUTHORITY, { cookie }))).toBe(true)
+    expect(await auth.listSessions()).toHaveLength(1)
+  })
+
+  it('blocks repeated failures per peer, reports the remaining wait, and resets on success', async () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date('2026-08-24T00:00:00.000Z'))
+    const auth = await passcodeAuth(new RecordCredentials()).auth
+    const blocked = '10.0.0.1'
+    const other = '10.0.0.2'
+
+    for (let attempt = 0; attempt < 10; attempt += 1) {
+      const denied = response()
+      expect(await auth.authorizeIndex(submit({
+        authority: AUTHORITY, remoteAddress: blocked, passcode: 'wrong',
+      }), denied.value)).toBe(false)
+      expect(denied.state.status).toBe(401)
+      expect(denied.state.body).toContain('Incorrect passcode. Try again.')
+    }
+    const limited = response()
+    expect(await auth.authorizeIndex(submit({
+      authority: AUTHORITY, remoteAddress: blocked, passcode: 'correct-horse',
+    }), limited.value)).toBe(false)
+    expect(limited.state.status).toBe(429)
+    expect(limited.state.headers?.['retry-after']).toBe('60')
+    expect(limited.state.body).toContain('Too many attempts. Try again in a minute.')
+
+    const otherPeer = response()
+    expect(await auth.authorizeIndex(submit({
+      authority: AUTHORITY, remoteAddress: other, passcode: 'wrong',
+    }), otherPeer.value)).toBe(false)
+    expect(otherPeer.state.status).toBe(401)
+
+    vi.setSystemTime(new Date('2026-08-24T00:01:00.000Z'))
+    // Recording this peer's failure also drops the expired entry for `blocked`.
+    const again = response()
+    expect(await auth.authorizeIndex(submit({
+      authority: AUTHORITY, remoteAddress: other, passcode: 'wrong',
+    }), again.value)).toBe(false)
+    expect(again.state.status).toBe(401)
+
+    const recovered = response()
+    expect(await auth.authorizeIndex(submit({
+      authority: AUTHORITY, remoteAddress: blocked, passcode: 'correct-horse',
+    }), recovered.value)).toBe(false)
+    expect(recovered.state.status).toBe(303)
+
+    const afterSuccess = response()
+    expect(await auth.authorizeIndex(submit({
+      authority: AUTHORITY, remoteAddress: blocked, passcode: 'wrong',
+    }), afterSuccess.value)).toBe(false)
+    expect(afterSuccess.state.status).toBe(401)
+
+    // A peer that waits out its own block is admitted again: reading its entry
+    // drops the expired block instead of reporting it.
+    const waiting = '10.0.0.3'
+    for (let attempt = 0; attempt < 10; attempt += 1) {
+      const denied = response()
+      expect(await auth.authorizeIndex(submit({
+        authority: AUTHORITY, remoteAddress: waiting, passcode: 'wrong',
+      }), denied.value)).toBe(false)
+    }
+    vi.setSystemTime(new Date('2026-08-24T00:02:00.000Z'))
+    const waited = response()
+    expect(await auth.authorizeIndex(submit({
+      authority: AUTHORITY, remoteAddress: waiting, passcode: 'correct-horse',
+    }), waited.value)).toBe(false)
+    expect(waited.state.status).toBe(303)
+  })
+
+  it('keeps a signed-in browser on the application without consulting the passcode', async () => {
+    const auth = await passcodeAuth(new RecordCredentials()).auth
+    const login = await exchange(auth)
+    const allowed = response()
+    expect(await auth.authorizeIndex(request('/', '127.0.0.1:3080', { cookie: login.cookie }), allowed.value)).toBe(true)
+    expect(allowed.state).toEqual({})
   })
 })

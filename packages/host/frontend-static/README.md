@@ -9,7 +9,7 @@ English | [中文](README.zh.md)
 
 ## Summary
 
-Serve the built Web shell to browsers from its configured distribution directory. The root and configured index path render the bootstrapped index; existing assets are served directly, while missing or non-file paths return 404, traversal returns 403, and unsupported methods return 405. Index access requires a valid process token or browser cookie, but static assets remain public. Only one instance can handle unmatched routes at a time; a second activation fails, and unloading the active instance makes unmatched requests return 404.
+Serve the built Web shell to browsers from its configured distribution directory. The root and configured index path render the bootstrapped index; existing assets are served directly, while missing or non-file paths return 404, traversal returns 403, and unsupported methods return 405. Index access requires a valid process token, browser cookie, or passcode form submission, but static assets remain public. Only one instance can handle unmatched routes at a time; a second activation fails, and unloading the active instance makes unmatched requests return 404.
 
 ## Table of Contents
 
@@ -39,7 +39,7 @@ Compose this plugin in a browser-facing host that serves the built Web shell: it
 
 ### What the server enforces
 
-Requests are served from the dist root (the directory containing `distIndex`). The dist root and the configured index path render `index.html` with HTTP 200; any other existing file is served directly with its MIME type, and unknown extensions ship as `application/octet-stream`. A path that resolves outside the root is rejected with 403, so a crafted path cannot read files above the dist. An absent or non-file target inside the dist root — a missing file, a directory, or a missing configured index — returns an empty 404. Non-GET/HEAD requests without a matching named route are answered 405. Every successful index response is rendered through the webserver's `renderIndex`, so the boot manifest reaches the page on `/` and on the configured index path. The render passes the request's remote address, so injection listeners see the answered client's address class.
+Requests are served from the dist root (the directory containing `distIndex`). The dist root and the configured index path render `index.html` with HTTP 200; any other existing file is served directly with its MIME type, and unknown extensions ship as `application/octet-stream`. A path that resolves outside the root is rejected with 403, so a crafted path cannot read files above the dist. An absent or non-file target inside the dist root — a missing file, a directory, or a missing configured index — returns an empty 404. A POST to the root or configured index path is only the passcode form submission and is delegated to the index authorization hook, with its form body capped at 4 KiB and an oversized body answered 413; every other method without a matching named route is answered 405. Every successful index response is rendered through the webserver's `renderIndex`, so the boot manifest reaches the page on `/` and on the configured index path. The render passes the request's remote address, so injection listeners see the answered client's address class.
 
 The served HTML carries one document base, `<base href="./">`, ahead of every injected resource row, so it freezes the entry directory the page was loaded from: the shell's own app-directory-relative references and the Host's plugin-resource rows both resolve under the mount that served the page. The same index therefore serves the origin root and whatever mount a prefix-stripping proxy owns; this plugin renders it only for the dist root and the configured index path.
 
@@ -47,7 +47,7 @@ Root and configured-index responses call `ctx.connection.authorizeIndex` before 
 
 ### Observable failures
 
-Traversal returns 403 rather than an error page. An absent or non-file target inside the dist root returns an empty 404, so a stale link or a mistyped pathname is an explicit failure rather than a silent SPA fallback. Claiming the seat twice throws, and while the seat is unclaimed the webserver answers 404 — which is what a browser sees if this plugin's fiber is disposed.
+Traversal returns 403 rather than an error page. An absent or non-file target inside the dist root returns an empty 404, so a stale link or a mistyped pathname is an explicit failure rather than a silent SPA fallback. An oversized index form body returns an empty 413. Claiming the seat twice throws, and while the seat is unclaimed the webserver answers 404 — which is what a browser sees if this plugin's fiber is disposed.
 
 -----
 

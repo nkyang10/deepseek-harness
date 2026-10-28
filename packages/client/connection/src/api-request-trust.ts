@@ -111,11 +111,13 @@ function isBindAddressAuthority(hostUrl: URL, bindHost: string | undefined): boo
 }
 
 /**
- * Decide whether one /api request may reach the RPC bridge.
+ * Decide whether one browser-facing request may pass the Host/Origin fence.
  * @param request - Node HTTP or Fetch request facts (headers).
  * @param trustedHosts - non-loopback authorities this deployment serves: exact `host:port`, or port-less `host` matching any port.
  * @param bindHost - the listener's own bind IP literal, accepted on any port independently of `trustedHosts`.
  * @param protocol - listener protocol for default Host ports; HTTP when no Web carrier is mounted.
+ * @param allowOpaqueOrigin - accept the literal `null` Origin from a WebView or sandboxed page after the Host fence;
+ *   callers authenticate the request separately.
  * @returns true when the Host is ours (loopback, the bind address, or trusted) and any attached browser markers are same-origin.
  */
 export function isTrustedApiRequest(
@@ -123,6 +125,7 @@ export function isTrustedApiRequest(
   trustedHosts: readonly string[],
   bindHost?: string,
   protocol: 'http:' | 'https:' = 'http:',
+  allowOpaqueOrigin = false,
 ): boolean {
   // Host fence (DNS-rebinding defense), applied to every request: the browser
   // fills Host from the URL it believes it is talking to, so a rebound page
@@ -143,10 +146,12 @@ export function isTrustedApiRequest(
   if (header(request.headers, 'sec-fetch-site') === 'cross-site') return false
   // Origin fence: when a browser attaches an Origin it must be exactly this
   // authority (compared through the same normalization as the Host). Absent
-  // Origin is fine — the Host fence above already bound the request. The
-  // literal "null" (sandboxed iframes, file: pages) is an opaque origin, refused.
+  // Origin is fine ??the Host fence above already bound the request. The
+  // literal "null" (sandboxed iframes, file: pages) is an opaque origin, refused
+  // unless the caller authenticates the request independently and opts in.
   const origin = header(request.headers, 'origin')
   if (origin === undefined) return true
+  if (allowOpaqueOrigin && origin === 'null') return true
   return isSameAuthorityOrigin(origin, host)
 }
 

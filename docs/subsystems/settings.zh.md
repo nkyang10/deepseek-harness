@@ -22,6 +22,24 @@
 
 Generated from source by `scripts/gen-cordis-catalog.ts` (verified fresh by `pnpm run verify-cordis-catalog` in doc-sync; regenerate with `pnpm run gen-cordis-catalog`) — the language sides differ only in locale-specific paired document paths. Signature blocks use a `ts cordis-catalog` fence and keep the original source JSDoc; dispatch modes are defined in the [primer](../cordis-primer.zh.md#dispatch-modes), and the framework-inherited `ctx` API lives in [cordis-api/inherited.md](../cordis-api/inherited.md).
 
+<a id="ctxopencodeconfigcontroller--opencodeconfigcontroller"></a>
+
+### `ctx.opencodeConfigController` — `OpencodeConfigController`
+
+Host service backing the generated `ctx.remote.opencodeConfig` namespace. It only reads files the Host resolves from OpenCode's documented configuration locations; the browser supplies no path, so this namespace cannot be used as a general filesystem read.
+
+```ts cordis-catalog
+/**
+ * Read the first existing default OpenCode config file.
+ * @returns the absolute path read and its UTF-8 contents.
+ * @throws RemoteError when the filesystem is absent, no candidate exists, the
+ *   first existing candidate is not a regular text file, or it exceeds the read cap.
+ */
+@Remote async readDefault(): Promise<OpenCodeConfigFile>
+```
+
+Source: [`packages/api/settings-controller/src/opencode-config.ts`](../../packages/api/settings-controller/src/opencode-config.ts)
+
 <a id="ctxsettings--settingsforms"></a>
 
 ### `ctx.settings` — `SettingsForms`

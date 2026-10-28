@@ -1,14 +1,15 @@
 /**
  * Browser pairing and per-device session cookies for the Host Connection carrier.
  *
- * A pairing code is the only way a browser obtains a session. The code is
- * durable: it lives in the harness credential store beside the cookie signing
- * secret, so a link handed to a phone keeps working across Host restarts until
- * its owner rotates it. Every browser that exchanges the code becomes a listed
- * session holding its own opaque id, and the signed cookie names that id.
- * Revoking a session drops the id, so each cookie naming it stops verifying at
- * once — without disturbing another session and without invalidating the
- * pairing code itself.
+ * A browser obtains a session by exchanging the durable pairing code in a
+ * shared link, or by submitting the owner-configured passcode on the served
+ * login page. The pairing code lives in the harness credential store beside the
+ * cookie signing secret, so a link handed to a phone keeps working across Host
+ * restarts until its owner rotates it. Every browser that pairs becomes a
+ * listed session holding its own opaque id, and the signed cookie names that
+ * id. Revoking a session drops the id, so each cookie naming it stops verifying
+ * at once — without disturbing another session and without invalidating either
+ * credential itself.
  */
 
 import { createHash, createHmac, randomBytes, timingSafeEqual } from 'node:crypto'
@@ -39,6 +40,24 @@ const API_COOKIE_VERSION = 2
 /** Stored record carrying the signing secret, the pairing code, and the session list. */
 const STORED_SESSION_VERSION = 2
 const BASE64URL_PATTERN = /^[A-Za-z0-9_-]*$/
+const PASSCODE_FIELD = 'passcode'
+const PASSCODE_FORM_TYPE = 'application/x-www-form-urlencoded'
+const PASSCODE_BODY_MAX_CHARS = 4_096
+/** Fixed abuse bounds for the human-chosen passcode; neither is deployment-tunable. */
+const PASSCODE_MAX_FAILURES = 10
+const PASSCODE_BLOCK_MILLISECONDS = 60_000
+
+/** Read-only passcode reference; the Loader's volatile config field satisfies it. */
+export interface PasscodeSource {
+  /** @returns the current passcode, or undefined when the owner has not set one. */
+  get(): string | undefined
+}
+
+/** Consecutive failed passcode submissions for one peer, and the resulting block. */
+interface PasscodeAttemptState {
+  failures: number
+  blockedUntil: number
+}
 
 /** Live session table plus the two secrets that authenticate it. */
 interface SessionStore {
@@ -322,11 +341,13 @@ function liveSessions(sessions: ReadonlyMap<BrowserDeviceId, BrowserSession>): M
  */
 export class BrowserAuth {
   private readonly maxAgeMilliseconds: number
+  private readonly passcodeAttempts = new Map<string, PasscodeAttemptState>()
 
   private constructor(
     private store: SessionStore,
     private readonly credentials: CredentialProvider,
     maxAgeDays: number,
+    private readonly passcode: PasscodeSource | undefined,
   ) {
     this.maxAgeMilliseconds = maxAgeDays * DAY_MILLISECONDS
     if (!Number.isSafeInteger(this.maxAgeMilliseconds)
@@ -339,14 +360,16 @@ export class BrowserAuth {
    * Initialize browser authentication and adopt or create the durable session store.
    * @param credentials - persistent credential provider for the Web profile.
    * @param maxAgeDays - positive absolute browser-cookie lifetime in days, measured from pairing.
+   * @param passcode - optional owner-configured login passcode shared with the served page.
    * @returns initialized authentication owner over the stored pairing code and sessions.
    */
   static async create(
     credentials: CredentialProvider,
     maxAgeDays: number,
+    passcode?: PasscodeSource,
   ): Promise<BrowserAuth> {
     const stored = await BrowserAuth.initializeStore(credentials)
-    return new BrowserAuth(stored, credentials, maxAgeDays)
+    return new BrowserAuth(stored, credentials, maxAgeDays, passcode)
   }
 
   /**
@@ -415,8 +438,87 @@ export class BrowserAuth {
       return false
     }
     if (this.isAuthenticated(req, secure)) return true
+    if (req.method === 'POST') {
+      await this.authorizePasscode(req, res, secure)
+      return false
+    }
     this.writeUnauthorized(req, res)
     return false
+  }
+
+  /**
+   * Authenticate one passcode form submission. A matching passcode pairs the
+   * browser and redirects exactly like the shared link; a miss renders the form
+   * again with a bounded, per-peer retry policy. Requests without a configured
+   * passcode receive the ordinary unauthenticated response.
+   * @param req - POST index request carrying the form body.
+   * @param res - response owned to completion.
+   * @param secure - whether the receiving listener serves TLS.
+   */
+  private async authorizePasscode(
+    req: ConnectionIndexRequest,
+    res: ConnectionIndexResponse,
+    secure: boolean,
+  ): Promise<void> {
+    const passcode = this.configuredPasscode()
+    if (passcode === undefined) {
+      this.writeUnauthorized(req, res)
+      return
+    }
+    const authority = requestAudience(req.headers, secure)
+    const key = req.remoteAddress ?? authority ?? 'unknown'
+    const blockedUntil = this.blockedUntil(key)
+    if (blockedUntil !== undefined) {
+      this.writePasscodePage(req, res, 429, 'tooMany', blockedUntil)
+      return
+    }
+    if (authority === undefined
+      || header(req.headers, 'content-type')?.split(';', 1)[0]?.trim().toLowerCase() !== PASSCODE_FORM_TYPE
+      || req.body === undefined || req.body.length > PASSCODE_BODY_MAX_CHARS) {
+      this.writePasscodePage(req, res, 400, 'badRequest')
+      return
+    }
+    const submitted = new URLSearchParams(req.body).get(PASSCODE_FIELD)
+    if (submitted === null) {
+      this.writePasscodePage(req, res, 400, 'badRequest')
+      return
+    }
+    if (codeMatches(submitted, passcode)) {
+      this.passcodeAttempts.delete(key)
+      await this.pair(req, authority, res, secure)
+      return
+    }
+    this.recordPasscodeFailure(key)
+    this.writePasscodePage(req, res, 401, 'incorrect')
+  }
+
+  /** @returns the passcode when the owner configured a non-empty one, or undefined. */
+  private configuredPasscode(): string | undefined {
+    const value = this.passcode?.get()
+    return value === undefined || value.length === 0 ? undefined : value
+  }
+
+  /** @returns the end of the active block for `key`, or undefined when attempts may proceed. */
+  private blockedUntil(key: string): number | undefined {
+    const state = this.passcodeAttempts.get(key)
+    if (state === undefined) return undefined
+    if (state.blockedUntil > Date.now()) return state.blockedUntil
+    if (state.blockedUntil !== 0) this.passcodeAttempts.delete(key)
+    return undefined
+  }
+
+  /** Count one failed submission, blocking this peer after the fixed threshold. */
+  private recordPasscodeFailure(key: string): void {
+    const now = Date.now()
+    const state = this.passcodeAttempts.get(key) ?? { failures: 0, blockedUntil: 0 }
+    state.failures += 1
+    if (state.failures >= PASSCODE_MAX_FAILURES) state.blockedUntil = now + PASSCODE_BLOCK_MILLISECONDS
+    this.passcodeAttempts.set(key, state)
+    for (const [candidate, entry] of this.passcodeAttempts) {
+      if (candidate !== key && entry.blockedUntil !== 0 && entry.blockedUntil <= now) {
+        this.passcodeAttempts.delete(candidate)
+      }
+    }
   }
 
   /**
@@ -658,6 +760,10 @@ export class BrowserAuth {
   }
 
   private writeUnauthorized(req: ConnectionIndexRequest, res: ConnectionIndexResponse): void {
+    if (this.configuredPasscode() !== undefined && req.method !== 'POST') {
+      this.writePasscodePage(req, res, 401)
+      return
+    }
     res.writeHead(401, {
       'cache-control': 'no-store',
       'content-type': 'text/plain; charset=utf-8',
@@ -666,4 +772,98 @@ export class BrowserAuth {
       ? undefined
       : 'dsh web authentication required; pair again from the application that serves this page.\n')
   }
+
+  /**
+   * Render the passcode login page. The page is a fixed document; the only
+   * variable is a closed error token, so no request data reaches the markup.
+   * @param req - request whose method decides whether a body is written.
+   * @param res - response owned by this call.
+   * @param status - status line for this page.
+   * @param error - closed error code shown above the form.
+   * @param blockedUntil - end of the active block, written as `Retry-After`.
+   */
+  private writePasscodePage(
+    req: ConnectionIndexRequest,
+    res: ConnectionIndexResponse,
+    status: number,
+    error?: 'incorrect' | 'tooMany' | 'badRequest',
+    blockedUntil?: number,
+  ): void {
+    const headers: Record<string, string> = {
+      'cache-control': 'no-store',
+      'content-type': 'text/html; charset=utf-8',
+      'content-security-policy': "default-src 'none'; style-src 'unsafe-inline'; form-action 'self'; frame-ancestors 'none'",
+      'referrer-policy': 'no-referrer',
+    }
+    if (blockedUntil !== undefined) {
+      headers['retry-after'] = String(Math.max(1, Math.ceil((blockedUntil - Date.now()) / 1000)))
+    }
+    res.writeHead(status, headers)
+    res.end(req.method === 'HEAD' ? undefined : passcodePage(error))
+  }
+}
+
+/** Closed error copy for the login page. */
+function passcodeError(error: 'incorrect' | 'tooMany' | 'badRequest'): string {
+  switch (error) {
+    case 'incorrect': return '<p class="error" role="alert">Incorrect passcode. Try again.</p>'
+    case 'tooMany': return '<p class="error" role="alert">Too many attempts. Try again in a minute.</p>'
+    case 'badRequest': return '<p class="error" role="alert">The passcode form was not submitted correctly.</p>'
+  }
+}
+
+/**
+ * Fixed login document for a deployment whose owner configured a passcode.
+ * @param error - closed error code, or undefined on the first visit.
+ * @returns a self-contained HTML page posting back to the same directory.
+ */
+function passcodePage(error?: 'incorrect' | 'tooMany' | 'badRequest'): string {
+  return `<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="referrer" content="no-referrer">
+<title>DeepSeek Harness — passcode required</title>
+<style>
+:root { color-scheme: light dark; }
+* { box-sizing: border-box; }
+body { margin: 0; min-height: 100vh; display: grid; place-items: center; background: #f6f6f7; color: #1f2328;
+  font: 15px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif; }
+main { width: min(360px, calc(100vw - 32px)); padding: 28px; border-radius: 14px; background: #fff;
+  box-shadow: 0 12px 32px rgb(0 0 0 / 10%); }
+h1 { margin: 0 0 8px; font-size: 20px; line-height: 1.3; }
+p { margin: 0 0 20px; color: #57606a; }
+label { display: block; margin-bottom: 6px; font-size: 13px; font-weight: 600; }
+input { width: 100%; height: 40px; padding: 0 12px; border: 1px solid #d0d7de; border-radius: 8px;
+  background: #fff; color: inherit; font: inherit; }
+input:focus { outline: 2px solid #0969da; outline-offset: 0; border-color: #0969da; }
+button { width: 100%; height: 40px; margin-top: 14px; border: 0; border-radius: 8px; background: #1f883d;
+  color: #fff; font: inherit; font-weight: 600; cursor: pointer; }
+button:disabled { opacity: 0.6; cursor: default; }
+.error { margin: 0 0 16px; color: #cf222e; }
+@media (prefers-color-scheme: dark) {
+  body { background: #0d1117; color: #e6edf3; }
+  main { background: #161b22; box-shadow: 0 12px 32px rgb(0 0 0 / 45%); }
+  p { color: #9198a1; }
+  input { border-color: #30363d; background: #0d1117; }
+  button { background: #238636; }
+  .error { color: #f85149; }
+}
+</style>
+</head>
+<body>
+<main>
+  <h1>Enter passcode</h1>
+  <p>This DeepSeek Harness Web deployment is protected by a passcode.</p>
+  ${error === undefined ? '' : passcodeError(error)}
+  <form method="post" action="./">
+    <label for="passcode">Passcode</label>
+    <input id="passcode" name="passcode" type="password" autocomplete="current-password" autofocus required>
+    <button type="submit">Continue</button>
+  </form>
+</main>
+</body>
+</html>
+`
 }

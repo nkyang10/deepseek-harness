@@ -271,6 +271,42 @@ describe('ui-settings-general apply', () => {
     })
   })
 
+  it('seats the remote-access passcode row only while Connection settings are served', async ({ mock, start }) => {
+    const { c } = await client(mock, start)
+    const rows = () => c.ctx.slots.entries('settings.general.item').filter(row => row.locale === NS)
+    expect(rows().map(row => row.options.id)).toEqual(['developer-tools', 'current-version'])
+
+    const connection: SettingsNamespaceView = {
+      ns: 'connection',
+      schema: {},
+      value: {},
+      autoGenerate: false,
+      applies: 'live',
+      secrets: [{ path: ['passcode'], set: false }],
+      revision: 0,
+    }
+    c.ctx.configForms.describe().acceptView(connection)
+    const row = rows().find(candidate => candidate.options.id === 'web-access')
+    expect(row).toBeDefined()
+    const face = row!.inject!()
+    const savePasscode = face.savePasscode
+    const clearPasscode = face.clearPasscode
+    if (typeof savePasscode !== 'function' || typeof clearPasscode !== 'function') {
+      throw new Error('web-access row lacks its passcode writers')
+    }
+    const form = c.ctx.configForms.get<{ passcode?: string }>('connection')
+    const set = vi.spyOn(form, 'set').mockResolvedValue(true)
+    const unset = vi.spyOn(form, 'unset').mockResolvedValue(true)
+    expect(await savePasscode('long-enough')).toBe(true)
+    expect(set).toHaveBeenCalledExactlyOnceWith('passcode', 'long-enough')
+    expect(await clearPasscode()).toBe(true)
+    expect(unset).toHaveBeenCalledExactlyOnceWith('passcode')
+
+    await c.unload(SELF)
+    await c.flush()
+    expect(rows()).toEqual([])
+  })
+
   it('removes every seat and the item declaration when its row unloads', async ({ mock, start }) => {
     const { c } = await client(mock, start)
     expect(c.ctx.slots.spec('settings.general.item')).toBeDefined()

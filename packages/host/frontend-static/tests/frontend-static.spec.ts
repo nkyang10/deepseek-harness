@@ -29,8 +29,13 @@ afterEach(async () => {
   root = undefined
 })
 
-/** Write a dist fixture and the authenticated Web rows, then boot them through the real Loader. */
-async function loadComposition(): Promise<Context> {
+/**
+ * Write a dist fixture and the authenticated Web rows, then boot them through
+ * the real Loader.
+ * @param passcode - optional owner passcode for the Connection row.
+ * @returns the booted Context.
+ */
+async function loadComposition(passcode?: string): Promise<Context> {
   root = await mkdtemp(join(tmpdir(), 'dsh-frontend-static-'))
   const dist = join(root, 'dist')
   await mkdir(dist)
@@ -51,6 +56,7 @@ async function loadComposition(): Promise<Context> {
     "    host: '127.0.0.1'",
     '    port: 0',
     "- name: '@deepseek-ai/dsh-client-connection'",
+    ...passcode === undefined ? [] : ['  config:', `    passcode: '${passcode}'`],
     '- id: frontend',
     "  name: '@deepseek-ai/dsh-host-frontend-static'",
     '  config:',
@@ -215,6 +221,7 @@ describe('real Loader composition', () => {
     // malformed filesystem target still reaches the webserver's 400 guard.
     expect((await request(port, '/..%2f..%2fetc%2fpasswd')).status).toBe(403)
     expect((await request(port, '/app.js', { method: 'POST' })).status).toBe(405)
+    expect((await request(port, '/', { method: 'PUT' })).status).toBe(405)
     expect((await request(port, '/bad%00path')).status).toBe(400)
 
     // HMR safety: disposing the frontend row releases the fallback seat (the
@@ -224,5 +231,58 @@ describe('real Loader composition', () => {
     await frontendEntry!.fiber?.dispose()
     expect((await request(port, '/no/such/route')).status).toBe(404)
     expect(() => server.registerFallback(() => {})).not.toThrow()
+  })
+
+  it('serves a passcode login form, pairs the browser, and refuses oversized submissions', { timeout: 60_000 }, async () => {
+    const loaded = await loadComposition('correct-horse')
+    const port = loaded.webServer.port
+    const form = { 'content-type': 'application/x-www-form-urlencoded' }
+
+    const page = await request(port, '/')
+    expect(page).toMatchObject({ status: 401, type: 'text/html; charset=utf-8' })
+    expect(page.body).toContain('<form method="post" action="./">')
+    expect((await request(port, '/', { method: 'HEAD' }))).toEqual({
+      status: 401, type: 'text/html; charset=utf-8', body: '',
+    })
+
+    const wrong = await request(port, '/', {
+      method: 'POST', headers: form, body: 'passcode=wrong', redirect: 'manual',
+    })
+    expect(wrong.status).toBe(401)
+    expect(wrong.body).toContain('Incorrect passcode. Try again.')
+
+    expect(await request(port, '/', {
+      method: 'POST', headers: form, body: `passcode=${'x'.repeat(5_000)}`, redirect: 'manual',
+    })).toEqual({ status: 413, type: null, body: '' })
+
+    // A chunked body has no declared length, so the same bound applies while
+    // reading the stream.
+    const oversizedStream = await fetch(`http://127.0.0.1:${String(port)}/`, {
+      method: 'POST', headers: form, redirect: 'manual', duplex: 'half',
+      body: new ReadableStream({
+        start(controller) {
+          controller.enqueue(new TextEncoder().encode(`passcode=${'x'.repeat(5_000)}`))
+          controller.close()
+        },
+      }),
+    } as RequestInit)
+    expect(oversizedStream.status).toBe(413)
+
+    const exchange = await fetch(`http://127.0.0.1:${String(port)}/`, {
+      method: 'POST', headers: form, body: 'passcode=correct-horse', redirect: 'manual',
+    })
+    expect(exchange.status).toBe(303)
+    expect(exchange.headers.get('location')).toBe('./')
+    const setCookie = exchange.headers.get('set-cookie')
+    if (setCookie === null) throw new Error('passcode login did not set a cookie')
+    const cookie = setCookie.split(';', 1)[0]!
+
+    const authenticated = await request(port, '/', { headers: { cookie } })
+    expect(authenticated).toMatchObject({ status: 200, type: 'text/html; charset=utf-8' })
+    expect(authenticated.body).toContain('shell')
+
+    expect(await request(port, '/', {
+      method: 'POST', headers: { ...form, cookie }, body: 'passcode=correct-horse', redirect: 'manual',
+    })).toEqual({ status: 303, type: null, body: '' })
   })
 })

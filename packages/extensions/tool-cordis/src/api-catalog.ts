@@ -1632,6 +1632,20 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
     ],
   },
   {
+    key: 'opencodeConfigController',
+    summary: 'Host service backing the generated `ctx.remote.opencodeConfig` namespace.',
+    description: 'Host service backing the generated `ctx.remote.opencodeConfig` namespace. It only reads files the Host resolves from OpenCode\'s documented configuration locations; the browser supplies no path, so this namespace cannot be used as a general filesystem read.',
+    methods: [
+      {
+        signature: '@Remote async readDefault(): Promise<OpenCodeConfigFile>',
+        description: 'Read the first existing default OpenCode config file.',
+        parameters: [],
+        returns: 'the absolute path read and its UTF-8 contents.',
+        throws: ['RemoteError when the filesystem is absent, no candidate exists, the first existing candidate is not a regular text file, or it exceeds the read cap.'],
+      },
+    ],
+  },
+  {
     key: 'otel',
     summary: 'Shared transport provider.',
     description: 'Shared transport provider. Mounting creates no queue, identity, or network connection.',
@@ -5135,7 +5149,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'ConnectionIndexRequest',
-    declaration: 'export interface ConnectionIndexRequest extends ConnectionTrustRequest {\n    readonly method?: string | undefined;\n    readonly url?: string | undefined;\n}',
+    declaration: 'export interface ConnectionIndexRequest extends ConnectionTrustRequest {\n    readonly method?: string | undefined;\n    readonly url?: string | undefined;\n    readonly body?: string | undefined;\n    readonly remoteAddress?: string | undefined;\n}',
   },
   {
     name: 'ConnectionIndexResponse',
@@ -6352,6 +6366,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'OneShotScheduleRecord',
     declaration: 'export type OneShotScheduleRecord = AfterScheduleRecord | AtScheduleRecord;',
+  },
+  {
+    name: 'OpenCodeConfigFile',
+    declaration: 'export interface OpenCodeConfigFile {\n    readonly path: string;\n    readonly content: string;\n}',
   },
   {
     name: 'OptionalSessionSeq',

@@ -162,9 +162,9 @@ export class HostConnectionService extends Service implements HostConnectionHand
     }
   }
 
-  private isTrusted(request: ConnectionTrustRequest): boolean {
+  private isTrusted(request: ConnectionTrustRequest, allowOpaqueOrigin = false): boolean {
     const carrier = this.owner.get('webServer')
-    return isTrustedApiRequest(request, this.trustedHosts, carrier?.host, carrier?.protocol ?? 'http:')
+    return isTrustedApiRequest(request, this.trustedHosts, carrier?.host, carrier?.protocol ?? 'http:', allowOpaqueOrigin)
   }
 
   private publishPeer(interactions: ConnectionInteractions): PeerId {
@@ -191,9 +191,19 @@ export class HostConnectionService extends Service implements HostConnectionHand
   /**
    * Authenticate an index request; native TLS listeners mint Secure cookies.
    * A successful pairing writes the new session to the credential store before
-   * the redirect that carries its cookie.
+   * the redirect that carries its cookie. A passcode form POST additionally
+   * passes the Host/Origin fence, because it authenticates with a
+   * human-chosen secret rather than the high-entropy pairing code. That POST
+   * accepts an opaque `null` Origin so a WebView or sandboxed page can submit
+   * the form; the Host fence and passcode still authenticate it.
    */
   async authorizeIndex(request: ConnectionIndexRequest, response: ConnectionIndexResponse): Promise<boolean> {
+    const allowOpaqueOrigin = request.method === 'POST'
+    if (request.method === 'POST' && !this.isTrusted(request, allowOpaqueOrigin)) {
+      response.writeHead(403)
+      response.end('forbidden')
+      return false
+    }
     return this.browserAuth.authorizeIndex(request, response, this.ctx.get('webServer')?.protocol === 'https:')
   }
 

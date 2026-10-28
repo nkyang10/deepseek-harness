@@ -22,9 +22,13 @@ dsh --profile web --public-url https://app.example/ui/ --trusted-host app.exampl
 
 ## Trust the authority browsers use
 
-The fence accepts loopback, the listener's own bind address, and every authority `--trusted-host` names. A browser that reaches the deployment under any other authority gets 403 for every API call, however correct the proxy is, so name the browser-visible authority with `--trusted-host`; advertising it with `--public-url` is display only and does not admit it. An entry without a port matches any port, which suits a tunnel that binds a different one each time. The fence only admits the request; the pairing code in the printed URL and the signed session cookie authenticate it. TLS, wherever it terminates, changes none of this: the certificate identifies the server to the browser, not the browser to the server.
+The fence accepts loopback, the listener's own bind address, and every authority `--trusted-host` names. A browser that reaches the deployment under any other authority gets 403 for every API call, however correct the proxy is, so name the browser-visible authority with `--trusted-host`; advertising it with `--public-url` is display only and does not admit it. An entry without a port matches any port, which suits a tunnel that binds a different one each time. The fence only admits the request; the pairing code in the printed URL, an optional passcode, and the signed session cookie authenticate it. TLS, wherever it terminates, changes none of this: the certificate identifies the server to the browser, not the browser to the server.
 
 Neither the advertised URL nor the fence protects the listening port itself, so restrict the port to the trusted proxy or network.
+
+## Let other devices sign in with a passcode
+
+Sharing the printed URL gives every recipient the same durable pairing credential. To hand out a short shared secret instead, set the Connection `passcode` (at least eight characters) under Settings → General → Remote access, or in the Connection row's config. An unauthenticated browser then sees a passcode page on the root or index URL; a correct submission pairs that browser with its own session cookie, and repeated failures are throttled per peer address. Already paired browsers keep working, and the pairing link keeps working beside the passcode. Clearing the passcode returns unauthenticated browsers to the plain 401 response. Serve the page over TLS before letting the passcode cross an untrusted network.
 
 ## Secure the external leg
 

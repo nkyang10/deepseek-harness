@@ -769,6 +769,31 @@ describe('operator-scoped connect', () => {
     } finally { await host.dispose() }
   })
 
+  it('refuses an index form post from an untrusted authority before authentication', async () => {
+    const host = await mounted()
+    try {
+      const denied = fakeResponse()
+      expect(await host.connection.authorizeIndex(
+        fakePost({ host: 'other.example' }, '/', {}), denied.response,
+      )).toBe(false)
+      expect(denied.state).toMatchObject({ status: 403, body: 'forbidden' })
+
+      const unauthenticated = fakeResponse()
+      expect(await host.connection.authorizeIndex(
+        fakePost({ host: 'localhost' }, '/', {}), unauthenticated.response,
+      )).toBe(false)
+      expect(unauthenticated.state.status).toBe(401)
+
+      // A WebView may submit the passcode form from an opaque origin; the Host
+      // fence and passcode still authenticate that request.
+      const opaque = fakeResponse()
+      expect(await host.connection.authorizeIndex(
+        fakePost({ host: 'localhost', origin: 'null' }, '/', {}), opaque.response,
+      )).toBe(false)
+      expect(opaque.state.status).toBe(401)
+    } finally { await host.dispose() }
+  })
+
   it('refuses invalid declarations, authentication, and untrusted connect requests without a cookie', async () => {
     const host = await mounted()
     try {

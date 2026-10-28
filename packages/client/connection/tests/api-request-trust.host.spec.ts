@@ -96,12 +96,22 @@ describe('isTrustedApiRequest', () => {
   })
 
   it('refuses cross-origin browser markers even on a loopback Host', () => {
-    // Origin present and different → cross-site request that survived preflight rules.
+    // Origin present and different ??cross-site request that survived preflight rules.
     expect(isTrustedApiRequest(request({ host: '127.0.0.1:3080', origin: 'http://evil.example' }), [])).toBe(false)
-    // Explicit cross-site label → refused regardless of Origin.
+    // Explicit cross-site label ??refused regardless of Origin.
     expect(isTrustedApiRequest(request({ host: '127.0.0.1:3080', 'sec-fetch-site': 'cross-site' }), [])).toBe(false)
     // Opaque origin (sandboxed iframe, file: page) parses to no authority.
     expect(isTrustedApiRequest(request({ host: '127.0.0.1:3080', origin: 'null' }), [])).toBe(false)
+  })
+
+  it('accepts an opaque Origin only on an authenticated request path', () => {
+    // A WebView or sandboxed page submits the passcode form with Origin: null.
+    expect(isTrustedApiRequest(request({ host: '192.168.1.5:3080', origin: 'null' }), ['192.168.1.5'], undefined, 'http:', true)).toBe(true)
+    // The Host fence and cross-site marker still decide before the opt-in applies.
+    expect(isTrustedApiRequest(request({ host: 'evil.example:3080', origin: 'null' }), [], undefined, 'http:', true)).toBe(false)
+    expect(isTrustedApiRequest(request({ host: '192.168.1.5:3080', origin: 'null', 'sec-fetch-site': 'cross-site' }), ['192.168.1.5'], undefined, 'http:', true)).toBe(false)
+    // Other origins still compare exactly when the opt-in is present.
+    expect(isTrustedApiRequest(request({ host: '192.168.1.5:3080', origin: 'http://evil.example' }), ['192.168.1.5'], undefined, 'http:', true)).toBe(false)
   })
 
   it('accepts a same-origin browser request, with or without an Origin header', () => {

@@ -10,8 +10,10 @@ import type { TriggerContentProps } from '../src/client/chrome.tsx'
 import { SettingsDocumentAction } from '../src/client/SettingsDocumentAction.tsx'
 import { DeveloperToolsRow } from '../src/client/DeveloperToolsRow.tsx'
 import { createSnapshotStore } from '@deepseek-ai/dsh-client-store'
-import { SettingsDescribeMirror } from '@deepseek-ai/dsh-client-ui-settings/src/client/settings-mirror.ts'
+import { SettingsDescribeMirror, type SettingsMirrorSnapshot } from '@deepseek-ai/dsh-client-ui-settings/src/client/settings-mirror.ts'
+import type { SettingsNamespaceView } from '@deepseek-ai/dsh-settings/types'
 import { SettingsDocumentStore } from '../src/client/settings-document-store.ts'
+import { WebAccessRow } from '../src/client/WebAccessRow.tsx'
 
 // Every fixture carries the resource hook the resources plugin merges into GlobalStandardProps.
 const useResource = (() => ({ status: 'none' as const, value: undefined, failure: undefined, reload: () => {} })) as GlobalStandardProps['useResource']
@@ -224,6 +226,109 @@ it('reports a failed developer-tool write and allows retry', async () => {
   fireEvent.click(toggle)
   await waitFor(() => { expect(toggle.getAttribute('aria-checked')).toBe('true') })
   expect(screen.queryByRole('alert')).toBeNull()
+})
+
+describe('remote access passcode', () => {
+  function connectionView(configured: boolean): SettingsNamespaceView {
+    return {
+      ns: 'connection',
+      schema: {},
+      value: {},
+      autoGenerate: false,
+      applies: 'live',
+      secrets: [{ path: ['passcode'], set: configured }],
+      revision: 0,
+    }
+  }
+
+  function mount(init: {
+    view?: SettingsMirrorSnapshot['view']
+    savePasscode?: (value: string) => Promise<boolean>
+    clearPasscode?: () => Promise<boolean>
+  }) {
+    const state = createSnapshotStore<SettingsMirrorSnapshot>({
+      status: 'ready', view: init.view, error: null,
+    })
+    const savePasscode = vi.fn(init.savePasscode ?? (async () => true))
+    const clearPasscode = vi.fn(init.clearPasscode ?? (async () => true))
+    const view = render(<WebAccessRow
+      {...kit}
+      t={t}
+      useSettings={bindSnapshotSelector(state)}
+      savePasscode={savePasscode}
+      clearPasscode={clearPasscode}
+    />)
+    return { view, savePasscode, clearPasscode }
+  }
+
+  it('disables both writers without a served, writable namespace', () => {
+    const missing = mount({ view: undefined })
+    expect(screen.getByRole('button', { name: 'Save' }).hasAttribute('disabled')).toBe(true)
+    expect(screen.getByLabelText('Remote access').hasAttribute('disabled')).toBe(true)
+    missing.view.unmount()
+
+    mount({ view: { namespaces: [connectionView(true)], writable: false, hasDocument: false } })
+    expect(screen.getByRole('button', { name: 'Save' }).hasAttribute('disabled')).toBe(true)
+    expect(screen.getByRole('button', { name: 'Clear passcode' }).hasAttribute('disabled')).toBe(true)
+    expect(screen.queryByText('A passcode is set.')).toBeTruthy()
+  })
+
+  it('validates locally, then reports accepted, rejected, and thrown saves', async () => {
+    const savePasscode = vi.fn()
+      .mockResolvedValueOnce(true)
+      .mockResolvedValueOnce(false)
+      .mockRejectedValueOnce(new Error('offline'))
+    const { view } = mount({
+      view: { namespaces: [connectionView(false)], writable: true, hasDocument: false },
+      savePasscode,
+    })
+    expect(screen.queryByText('A passcode is set.')).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Clear passcode' })).toBeNull()
+    const input = screen.getByLabelText('Remote access') as HTMLInputElement
+    const save = screen.getByRole('button', { name: 'Save' })
+    expect(save.hasAttribute('disabled')).toBe(true)
+
+    fireEvent.change(input, { target: { value: 'short' } })
+    fireEvent.click(save)
+    expect((screen.getByRole('alert')).textContent).toBe('The passcode must be at least 8 characters.')
+    expect(savePasscode).not.toHaveBeenCalled()
+
+    fireEvent.change(input, { target: { value: 'long-enough' } })
+    fireEvent.click(save)
+    await waitFor(() => { expect(savePasscode).toHaveBeenCalledWith('long-enough') })
+    await waitFor(() => { expect(input.value).toBe('') })
+    expect(screen.queryByRole('alert')).toBeNull()
+
+    fireEvent.change(input, { target: { value: 'again-long' } })
+    fireEvent.click(save)
+    expect((await screen.findByRole('alert')).textContent).toBe('Could not save. Please try again.')
+
+    fireEvent.change(input, { target: { value: 'third-time' } })
+    fireEvent.click(save)
+    await waitFor(() => { expect(savePasscode).toHaveBeenCalledTimes(3) })
+    expect((await screen.findByRole('alert')).textContent).toBe('Could not save. Please try again.')
+    expect(view.container.textContent).not.toContain('A passcode is set.')
+  })
+
+  it('clears a configured passcode and reports rejected and thrown clears', async () => {
+    const clearPasscode = vi.fn()
+      .mockResolvedValueOnce(false)
+      .mockRejectedValueOnce(new Error('offline'))
+      .mockResolvedValueOnce(true)
+    mount({
+      view: { namespaces: [connectionView(true)], writable: true, hasDocument: true },
+      clearPasscode,
+    })
+    const clear = screen.getByRole('button', { name: 'Clear passcode' })
+    fireEvent.click(clear)
+    expect((await screen.findByRole('alert')).textContent).toBe('Could not save. Please try again.')
+    fireEvent.click(clear)
+    await waitFor(() => { expect(clearPasscode).toHaveBeenCalledTimes(2) })
+    expect((await screen.findByRole('alert')).textContent).toBe('Could not save. Please try again.')
+    fireEvent.click(clear)
+    await waitFor(() => { expect(screen.queryByRole('alert')).toBeNull() })
+    expect(clearPasscode).toHaveBeenCalledTimes(3)
+  })
 })
 
 describe('current version', () => {

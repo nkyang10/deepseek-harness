@@ -1,5 +1,5 @@
 /** Host HTTP bridge for browser-client RPC. */
-import type { Context } from '@deepseek-ai/cordis'
+import type { Context, Volatile } from '@deepseek-ai/cordis'
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import z from '@deepseek-ai/schemastery'
 import type {} from '@deepseek-ai/dsh-attachment'
@@ -76,6 +76,9 @@ declare module '@deepseek-ai/cordis' {
 /** Headroom for RPC JSON fields around aggregate base64 image payloads. */
 const REQUEST_ENVELOPE_HEADROOM_BYTES = 1024 * 1024
 
+/** Minimum owner-chosen passcode length; shorter values fail configuration validation. */
+const PASSCODE_MIN_LENGTH = 8
+
 function assertImageBodyCapacity(ctx: Context, maxRequestBodyBytes: number): void {
   const attachments = ctx.get('attachments')
   if (attachments === undefined) return
@@ -106,14 +109,21 @@ export interface ConnectionConfig {
   trustedHosts?: string[]
   /** Absolute browser and API cookie lifetime in days. Default: 30. */
   cookieMaxAgeDays?: number
+  /**
+   * Owner-configured login passcode for the unauthenticated Web page. At least
+   * eight characters; a configured passcode is offered beside the durable
+   * pairing link. Unset by default.
+   */
+  passcode?: Volatile<string | undefined>
   /** Maximum buffered JSON body for every `/api` request. Default: 300 MiB. */
   maxRequestBodyBytes?: number
 }
 
-export const Config: z<ConnectionConfig> = z.object({
+export const Config = z.object({
   recovery: ConnectionRecoveryConfigSchema.default({}),
   trustedHosts: z.array(String).default([]),
   cookieMaxAgeDays: z.natural().min(1).default(30),
+  passcode: z.string().min(PASSCODE_MIN_LENGTH).role('secret').volatile(),
   maxRequestBodyBytes: z.natural().min(1).default(DEFAULT_MAX_REQUEST_BODY_BYTES),
 })
 
@@ -137,7 +147,7 @@ export async function apply(ctx: Context, config?: ConnectionConfig): Promise<vo
   const connection = new HostConnectionService(
     ctx,
     trustedHosts,
-    await BrowserAuth.create(ctx.credentials, cookieMaxAgeDays),
+    await BrowserAuth.create(ctx.credentials, cookieMaxAgeDays, config?.passcode),
   )
   ctx.inject(['webServer'], (webCtx) => {
     assertImageBodyCapacity(webCtx, maxRequestBodyBytes)

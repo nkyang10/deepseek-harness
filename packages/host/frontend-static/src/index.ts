@@ -12,7 +12,7 @@
  * @module @deepseek-ai/dsh-host-frontend-static
  */
 
-import type { ServerResponse } from 'node:http'
+import type { IncomingMessage, ServerResponse } from 'node:http'
 import { readFile } from 'node:fs/promises'
 import { dirname, extname, join, normalize, resolve, sep } from 'node:path'
 import type { Context } from '@deepseek-ai/cordis'
@@ -58,8 +58,11 @@ const STATIC_MISS_CODES: ReadonlySet<string | undefined> = new Set([
   'ENOTDIR',
 ])
 
+/** Bound for the passcode form body; one field of at most a few dozen bytes. */
+const INDEX_FORM_BODY_LIMIT_BYTES = 4_096
+
 /**
- * Serve one GET/HEAD static request from the dist root.
+ * Serve one static request from the dist root.
  * @param pathname - decoded URL pathname of the request.
  * @param res - the node:http response to write.
  * @param distRoot - absolute dist root directory (resolved by the caller).
@@ -68,11 +71,14 @@ const STATIC_MISS_CODES: ReadonlySet<string | undefined> = new Set([
  * read; pairing a new browser writes its session to the credential store first.
  * @param renderIndex - produces the index.html body (structured injection
  * rendering) for the dist root and configured index path.
+ * @param method - request method; a POST on an index path is only the passcode
+ * form submission and is owned by `authorizeIndex`.
  */
 export async function serveStatic(
   pathname: string, res: ServerResponse, distRoot: string, distIndex: string,
   authorizeIndex: () => Promise<boolean>,
   renderIndex: () => Promise<string>,
+  method = 'GET',
 ): Promise<void> {
   const target = resolve(normalize(join(distRoot, pathname)))
   // Traversal rejection: the target must be distRoot itself (`/`) or stay under
@@ -87,10 +93,24 @@ export async function serveStatic(
   let type: string
   try {
     if (target === distRoot || target === distIndex) {
+      if (method === 'POST') {
+        // An already authenticated form submit has no pairing work left; send
+        // the browser back to the clean application URL instead of hanging.
+        if (await authorizeIndex()) {
+          res.writeHead(303, { 'cache-control': 'no-store', 'location': './' })
+          res.end()
+        }
+        return
+      }
       if (!await authorizeIndex()) return
       body = await renderIndex()
       type = HTML_MIME
     } else {
+      if (method !== 'GET' && method !== 'HEAD') {
+        res.writeHead(405)
+        res.end()
+        return
+      }
       body = await readFile(target)
       type = MIME[extname(target)] ?? 'application/octet-stream'
     }
@@ -107,6 +127,26 @@ export async function serveStatic(
 }
 
 /**
+ * Read one bounded form body from an incoming request.
+ * @param req - the incoming HTTP request.
+ * @returns the decoded body, or undefined when it exceeds the fixed passcode-form bound.
+ */
+async function readFormBody(req: IncomingMessage): Promise<string | undefined> {
+  const declared = Number(req.headers['content-length'])
+  if (Number.isFinite(declared) && declared > INDEX_FORM_BODY_LIMIT_BYTES) return undefined
+  const chunks: Buffer[] = []
+  let length = 0
+  for await (const chunk of req) {
+    /* v8 ignore next -- node:http request streams yield Buffer chunks */
+    const bytes = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk as Uint8Array)
+    length += bytes.byteLength
+    if (length > INDEX_FORM_BODY_LIMIT_BYTES) return undefined
+    chunks.push(bytes)
+  }
+  return Buffer.concat(chunks).toString('utf8')
+}
+
+/**
  * Claim the webserver fallback seat and serve the dist.
  * @param ctx - plugin context carrying the webServer service.
  * @param config - validated {@link Config}.
@@ -115,9 +155,9 @@ export function apply(ctx: Context, config: Config): void {
   const distIndex = config.distIndex
   const distRoot = dirname(distIndex)
   ctx.effect(() => ctx.webServer.registerFallback(async (req, res) => {
-    // Non-GET/HEAD without a matching named route is 405 (fallback-only
-    // semantics: named routes own their method handling).
-    if (req.method !== 'GET' && req.method !== 'HEAD') {
+    // Only the three methods the static surface and passcode form use are
+    // accepted; anything else without a matching named route is 405.
+    if (req.method !== 'GET' && req.method !== 'HEAD' && req.method !== 'POST') {
       res.writeHead(405)
       res.end()
       return
@@ -130,13 +170,32 @@ export function apply(ctx: Context, config: Config): void {
       const body = ctx.webServer.renderIndex(await readFile(distIndex, 'utf8'), req.socket.remoteAddress)
       return body.replace(/<head(?:\s[^>]*)?>/i, open => `${open}<base href="./">`)
     }
+    const authorizeIndex = async (): Promise<boolean> => {
+      let body: string | undefined
+      if (req.method === 'POST') {
+        body = await readFormBody(req)
+        if (body === undefined) {
+          res.writeHead(413, { 'cache-control': 'no-store' })
+          res.end()
+          return false
+        }
+      }
+      return ctx.connection.authorizeIndex({
+        method: req.method,
+        url: req.url,
+        headers: req.headers,
+        remoteAddress: req.socket.remoteAddress,
+        ...body === undefined ? {} : { body },
+      }, res)
+    }
     await serveStatic(
       decodeURIComponent(rawPath),
       res,
       distRoot,
       distIndex,
-      () => ctx.connection.authorizeIndex(req, res),
+      authorizeIndex,
       renderIndex,
+      req.method,
     )
   }), 'frontend-static: fallback seat')
 }
