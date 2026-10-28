@@ -9,6 +9,7 @@ import type { ConnectionIndexRequest, ConnectionIndexResponse } from '../src/rpc
 import { RecordCredentials } from './browser-credentials.ts'
 
 const UNAUTHORIZED_BODY = 'dsh web authentication required; pair again from the application that serves this page.\n'
+const LOGIN_CSP = "default-src 'none'; style-src 'unsafe-inline'; form-action 'self'; frame-ancestors 'none'"
 
 function signedCookie(store: RecordCredentials, name: string, payload: unknown): string {
   const body = typeof payload === 'string'
@@ -141,6 +142,13 @@ describe('API credentials', () => {
       status: 401,
       headers: { 'cache-control': 'no-store', 'content-type': 'text/plain; charset=utf-8' },
       body: 'dsh web authentication required; pair again from the application that serves this page.\n',
+    })
+
+    const head = response()
+    auth.authorizeConnect({ method: 'HEAD', headers: { host: 'localhost' } }, head.value, false, publish)
+    expect(head.state).toEqual({
+      status: 401,
+      headers: { 'cache-control': 'no-store', 'content-type': 'text/plain; charset=utf-8' },
     })
     expect(publish).not.toHaveBeenCalled()
   })
@@ -424,13 +432,19 @@ describe('BrowserAuth', () => {
     ))).toBe(true)
   })
 
-  it('accepts the cookie for index serving and gives every unauthenticated request one response', async () => {
+  it('serves the index to a valid cookie and gives unauthenticated browsers the sign-in page', async () => {
     const auth = await createAuth(new RecordCredentials())
     const { cookie } = await exchange(auth)
     const allowed = response()
     expect(await auth.authorizeIndex(request('/index.html', '127.0.0.1:3080', { cookie }), allowed.value)).toBe(true)
     expect(allowed.state).toEqual({})
 
+    const pageHeaders = {
+      'cache-control': 'no-store',
+      'content-type': 'text/html; charset=utf-8',
+      'content-security-policy': LOGIN_CSP,
+      'referrer-policy': 'no-referrer',
+    }
     for (const candidate of [
       request('/'),
       request('/?token=wrong'),
@@ -441,12 +455,28 @@ describe('BrowserAuth', () => {
       const denied = response()
       expect(await auth.authorizeIndex(candidate, denied.value)).toBe(false)
       expect(denied.state.status).toBe(401)
-      expect(denied.state.headers).toEqual({
-        'cache-control': 'no-store',
-        'content-type': 'text/plain; charset=utf-8',
-      })
-      expect(denied.state.body).toBe(candidate.method === 'HEAD' ? undefined : UNAUTHORIZED_BODY)
+      expect(denied.state.headers).toEqual(pageHeaders)
+      if (candidate.method === 'HEAD') expect(denied.state.body).toBeUndefined()
+      else expect(denied.state.body).toContain('Open the app to sign in')
     }
+
+    // A passcode form POST with no passcode configured still gets the plain 401 text.
+    const posted = response()
+    expect(await auth.authorizeIndex(submit({}), posted.value)).toBe(false)
+    expect(posted.state).toEqual({
+      status: 401,
+      headers: { 'cache-control': 'no-store', 'content-type': 'text/plain; charset=utf-8' },
+      body: UNAUTHORIZED_BODY,
+    })
+
+    // A form POST that still carries a stale pairing token keeps the plain 401 text.
+    const tokenPost = response()
+    expect(await auth.authorizeIndex({ ...submit({}), url: '/?token=wrong' }, tokenPost.value)).toBe(false)
+    expect(tokenPost.state).toEqual({
+      status: 401,
+      headers: { 'cache-control': 'no-store', 'content-type': 'text/plain; charset=utf-8' },
+      body: UNAUTHORIZED_BODY,
+    })
   })
 
   it('rejects a tampered, truncated, or unsigned cookie', async () => {
@@ -593,7 +623,7 @@ describe('BrowserAuth', () => {
 describe('passcode login', () => {
   const AUTHORITY = '192.168.1.162:9445'
 
-  it('serves the passcode page to an unauthenticated browser and keeps plain 401 without a passcode', async () => {
+  it('serves the passcode page, the no-passcode sign-in page, and keeps a POST plain', async () => {
     const auth = await passcodeAuth(new RecordCredentials()).auth
     const page = response()
     expect(await auth.authorizeIndex(request('/', AUTHORITY), page.value)).toBe(false)
@@ -601,7 +631,7 @@ describe('passcode login', () => {
     expect(page.state.headers).toEqual({
       'cache-control': 'no-store',
       'content-type': 'text/html; charset=utf-8',
-      'content-security-policy': "default-src 'none'; style-src 'unsafe-inline'; form-action 'self'; frame-ancestors 'none'",
+      'content-security-policy': LOGIN_CSP,
       'referrer-policy': 'no-referrer',
     })
     expect(page.state.body).toContain('<form method="post" action="./">')
@@ -614,18 +644,37 @@ describe('passcode login', () => {
     expect(head.state.body).toBeUndefined()
     expect(head.state.headers?.['content-type']).toBe('text/html; charset=utf-8')
 
-    const bare = await BrowserAuth.create(credentials(new RecordCredentials()), 30)
-    const blank = await passcodeAuth(new RecordCredentials(), '').auth
-    for (const auth of [bare, blank]) {
-      for (const candidate of [request('/', AUTHORITY), submit({ authority: AUTHORITY })]) {
-        const denied = response()
-        expect(await auth.authorizeIndex(candidate, denied.value)).toBe(false)
-        expect(denied.state).toEqual({
-          status: 401,
-          headers: { 'cache-control': 'no-store', 'content-type': 'text/plain; charset=utf-8' },
-          body: candidate.method === 'HEAD' ? undefined : UNAUTHORIZED_BODY,
-        })
-      }
+    // Without an owner passcode a browser gets the sign-in page; a form POST gets plain text.
+    for (const bare of [
+      await BrowserAuth.create(credentials(new RecordCredentials()), 30),
+      await passcodeAuth(new RecordCredentials(), '').auth,
+    ]) {
+      const signIn = response()
+      expect(await bare.authorizeIndex(request('/', AUTHORITY), signIn.value)).toBe(false)
+      expect(signIn.state.status).toBe(401)
+      expect(signIn.state.headers).toEqual({
+        'cache-control': 'no-store',
+        'content-type': 'text/html; charset=utf-8',
+        'content-security-policy': LOGIN_CSP,
+        'referrer-policy': 'no-referrer',
+      })
+      expect(signIn.state.body).toContain('Open the app to sign in')
+      expect(signIn.state.body).toContain('enable a passcode')
+      expect(signIn.state.body).not.toContain('<form')
+
+      const signInHead = response()
+      expect(await bare.authorizeIndex(request('/', AUTHORITY, { method: 'HEAD' }), signInHead.value)).toBe(false)
+      expect(signInHead.state.status).toBe(401)
+      expect(signInHead.state.headers?.['content-type']).toBe('text/html; charset=utf-8')
+      expect(signInHead.state.body).toBeUndefined()
+
+      const posted = response()
+      expect(await bare.authorizeIndex(submit({ authority: AUTHORITY }), posted.value)).toBe(false)
+      expect(posted.state).toEqual({
+        status: 401,
+        headers: { 'cache-control': 'no-store', 'content-type': 'text/plain; charset=utf-8' },
+        body: UNAUTHORIZED_BODY,
+      })
     }
   })
 

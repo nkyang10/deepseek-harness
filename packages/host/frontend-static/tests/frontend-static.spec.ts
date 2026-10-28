@@ -126,11 +126,10 @@ describe('real Loader composition', () => {
       return { ...init, headers }
     }
 
-    expect(await request(port, '/')).toMatchObject({
-      status: 401,
-      type: 'text/plain; charset=utf-8',
-      body: 'dsh web authentication required; pair again from the application that serves this page.\n',
-    })
+    // An unauthenticated browser with no owner passcode gets the self-contained sign-in page.
+    const unauthenticated = await request(port, '/')
+    expect(unauthenticated).toMatchObject({ status: 401, type: 'text/html; charset=utf-8' })
+    expect(unauthenticated.body).toContain('Open the app to sign in')
 
     // Real assets with their MIME types; a live rebuild is served on the next read.
     expect(await request(port, '/app.js')).toMatchObject({ status: 200, type: 'text/javascript; charset=utf-8', body: 'export {}' })
