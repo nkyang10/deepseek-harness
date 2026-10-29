@@ -3,16 +3,18 @@
  *
  * A browser obtains a session by exchanging the durable pairing code in a
  * shared link, or by submitting the owner-configured passcode on the served
- * login page. The pairing code lives in the harness credential store beside the
- * cookie signing secret, so a link handed to a phone keeps working across Host
- * restarts until its owner rotates it. Every browser that pairs becomes a
+ * login page. The passcode is stored only as a salt-and-scrypt verifier in the
+ * harness credential store beside the cookie signing secret; its plaintext is
+ * never persisted. The pairing code lives there too, so a link handed to a
+ * phone keeps working across Host restarts until its owner rotates it. Every
+ * browser that pairs becomes a
  * listed session holding its own opaque id, and the signed cookie names that
  * id. Revoking a session drops the id, so each cookie naming it stops verifying
  * at once — without disturbing another session and without invalidating either
  * credential itself.
  */
 
-import { createHash, createHmac, randomBytes, timingSafeEqual } from 'node:crypto'
+import { createHash, createHmac, randomBytes, scrypt, timingSafeEqual, type ScryptOptions } from 'node:crypto'
 import { brandString } from '@deepseek-ai/dsh-brand'
 import type { PeerId } from '@deepseek-ai/dsh-typert-protocol'
 import { credentialKey } from '@deepseek-ai/dsh-credentials'
@@ -27,6 +29,7 @@ import type {
 } from './rpc.ts'
 
 const AUTH_RECORD_KEY = credentialKey('client-connection', 'browser-session')
+const PASSCODE_RECORD_KEY = credentialKey('client-connection', 'passcode-verifier')
 const DAY_MILLISECONDS = 24 * 60 * 60 * 1000
 const SECRET_BYTES = 32
 const DEVICE_ID_BYTES = 9
@@ -42,18 +45,34 @@ const STORED_SESSION_VERSION = 2
 const BASE64URL_PATTERN = /^[A-Za-z0-9_-]*$/
 const PASSCODE_FIELD = 'passcode'
 const PASSCODE_FORM_TYPE = 'application/x-www-form-urlencoded'
-const PASSCODE_BODY_MAX_CHARS = 4_096
-/** Fixed abuse bounds for the human-chosen passcode; neither is deployment-tunable. */
+/** Fixed bounds for the human-chosen passcode; none is deployment-tunable. */
+const PASSCODE_MIN_LENGTH = 12
+const PASSCODE_MAX_LENGTH = 1_024
+/** Form body bound wide enough for any percent-encoded passcode up to the length limit. */
+const PASSCODE_BODY_MAX_CHARS = 16_384
 const PASSCODE_MAX_FAILURES = 10
 const PASSCODE_BLOCK_MILLISECONDS = 60_000
+const PASSCODE_SALT_BYTES = 16
+const PASSCODE_KEY_BYTES = 32
+const PASSCODE_SCRYPT_N = 65_536
+const PASSCODE_SCRYPT_R = 8
+const PASSCODE_SCRYPT_P = 2
+const PASSCODE_SCRYPT_MAXMEM = 128 * 1024 * 1024
+const PASSCODE_VERIFIER_VERSION = 1
 
 /** No-script/no-frame CSP for every served login page. */
 const LOGIN_PAGE_CSP = "default-src 'none'; style-src 'unsafe-inline'; form-action 'self'; frame-ancestors 'none'"
 
-/** Read-only passcode reference; the Loader's volatile config field satisfies it. */
-export interface PasscodeSource {
-  /** @returns the current passcode, or undefined when the owner has not set one. */
-  get(): string | undefined
+/** One-way verifier for the owner passcode; the passcode itself is never stored. */
+interface PasscodeVerifier {
+  readonly version: typeof PASSCODE_VERIFIER_VERSION
+  readonly algorithm: 'scrypt'
+  readonly salt: string
+  readonly n: number
+  readonly r: number
+  readonly p: number
+  readonly keyLength: number
+  readonly hash: string
 }
 
 /** Consecutive failed passcode submissions for one peer, and the resulting block. */
@@ -174,6 +193,67 @@ function canonicalSecret(value: unknown): Buffer | undefined {
   if (typeof value !== 'string') return undefined
   const decoded = decodeBase64Url(value)
   return decoded !== undefined && decoded.byteLength === SECRET_BYTES ? decoded : undefined
+}
+
+/**
+ * Derive a passcode key with explicit scrypt options.
+ * @param passcode - the submitted or newly chosen passcode.
+ * @param salt - the verifier salt.
+ * @param keyLength - the derived key length in bytes.
+ * @param options - fixed scrypt cost parameters and memory ceiling.
+ * @returns the derived key.
+ */
+function derivePasscodeKey(passcode: string, salt: Uint8Array, keyLength: number, options: ScryptOptions): Promise<Buffer> {
+  return new Promise((resolve, reject) => {
+    scrypt(passcode, salt, keyLength, options, (error, derivedKey) => {
+      if (error !== null) reject(error)
+      else resolve(derivedKey)
+    })
+  })
+}
+
+/** Rejection naming the passcode record this plugin owns, for any unreadable stored shape. */
+function malformedPasscodeRecordError(): Error {
+  return new Error('client-connection: passcode verifier credential record is malformed')
+}
+
+/**
+ * Read the stored passcode verifier. The record is durable user-editable data,
+ * so every field must match the parameters this build writes; parameters are
+ * not accepted from the file because a forged cost would control verification.
+ * @param record - the stored credential record, absent when no passcode is set.
+ * @returns the verifier, or undefined when no record is stored.
+ * @throws when a stored record is present but unreadable.
+ */
+function storedPasscodeVerifier(record: CredentialRecord | undefined): PasscodeVerifier | undefined {
+  if (record === undefined) return undefined
+  if (record.kind !== 'grant' || !isRecord(record.payload)) throw malformedPasscodeRecordError()
+  const payload = record.payload
+  if (payload.version !== PASSCODE_VERIFIER_VERSION
+    || payload.algorithm !== 'scrypt'
+    || payload.n !== PASSCODE_SCRYPT_N
+    || payload.r !== PASSCODE_SCRYPT_R
+    || payload.p !== PASSCODE_SCRYPT_P
+    || payload.keyLength !== PASSCODE_KEY_BYTES
+    || typeof payload.salt !== 'string' || typeof payload.hash !== 'string') {
+    throw malformedPasscodeRecordError()
+  }
+  const salt = decodeBase64Url(payload.salt)
+  const hash = decodeBase64Url(payload.hash)
+  if (salt === undefined || salt.byteLength !== PASSCODE_SALT_BYTES
+    || hash === undefined || hash.byteLength !== PASSCODE_KEY_BYTES) {
+    throw malformedPasscodeRecordError()
+  }
+  return {
+    version: PASSCODE_VERIFIER_VERSION,
+    algorithm: 'scrypt',
+    salt: payload.salt,
+    n: PASSCODE_SCRYPT_N,
+    r: PASSCODE_SCRYPT_R,
+    p: PASSCODE_SCRYPT_P,
+    keyLength: PASSCODE_KEY_BYTES,
+    hash: payload.hash,
+  }
 }
 
 function canonicalDeviceId(value: unknown): BrowserDeviceId | undefined {
@@ -350,7 +430,6 @@ export class BrowserAuth {
     private store: SessionStore,
     private readonly credentials: CredentialProvider,
     maxAgeDays: number,
-    private readonly passcode: PasscodeSource | undefined,
   ) {
     this.maxAgeMilliseconds = maxAgeDays * DAY_MILLISECONDS
     if (!Number.isSafeInteger(this.maxAgeMilliseconds)
@@ -363,16 +442,14 @@ export class BrowserAuth {
    * Initialize browser authentication and adopt or create the durable session store.
    * @param credentials - persistent credential provider for the Web profile.
    * @param maxAgeDays - positive absolute browser-cookie lifetime in days, measured from pairing.
-   * @param passcode - optional owner-configured login passcode shared with the served page.
    * @returns initialized authentication owner over the stored pairing code and sessions.
    */
   static async create(
     credentials: CredentialProvider,
     maxAgeDays: number,
-    passcode?: PasscodeSource,
   ): Promise<BrowserAuth> {
     const stored = await BrowserAuth.initializeStore(credentials)
-    return new BrowserAuth(stored, credentials, maxAgeDays, passcode)
+    return new BrowserAuth(stored, credentials, maxAgeDays)
   }
 
   /**
@@ -395,6 +472,65 @@ export class BrowserAuth {
       throw new Error('client-connection: browser-session credential record was not created')
     }
     return store
+  }
+
+  /**
+   * Report whether the owner has configured a passcode.
+   * @returns true when a readable passcode verifier is stored.
+   * @throws when a stored verifier record is malformed.
+   */
+  async passcodeSet(): Promise<boolean> {
+    return (await this.passcodeVerifier()) !== undefined
+  }
+
+  /**
+   * Replace the owner passcode with a fresh salt-and-scrypt verifier. The
+   * passcode itself is never written; an existing verifier is overwritten only
+   * after the new one is derived.
+   * @param passcode - owner-chosen passcode, at least twelve characters.
+   * @returns fulfillment after the verifier is durable.
+   * @throws when the passcode length is outside the accepted bounds or the
+   *   credential provider does not create the record.
+   */
+  async setPasscode(passcode: string): Promise<void> {
+    if (typeof passcode !== 'string'
+      || passcode.length < PASSCODE_MIN_LENGTH
+      || passcode.length > PASSCODE_MAX_LENGTH) {
+      throw new Error(`client-connection: passcode must be ${String(PASSCODE_MIN_LENGTH)}-${String(PASSCODE_MAX_LENGTH)} characters`)
+    }
+    const salt = randomBytes(PASSCODE_SALT_BYTES)
+    const hash = await derivePasscodeKey(passcode, salt, PASSCODE_KEY_BYTES, {
+      N: PASSCODE_SCRYPT_N,
+      r: PASSCODE_SCRYPT_R,
+      p: PASSCODE_SCRYPT_P,
+      maxmem: PASSCODE_SCRYPT_MAXMEM,
+    })
+    const verifier: PasscodeVerifier = {
+      version: PASSCODE_VERIFIER_VERSION,
+      algorithm: 'scrypt',
+      salt: encodeBase64Url(salt),
+      n: PASSCODE_SCRYPT_N,
+      r: PASSCODE_SCRYPT_R,
+      p: PASSCODE_SCRYPT_P,
+      keyLength: PASSCODE_KEY_BYTES,
+      hash: encodeBase64Url(hash),
+    }
+    const record = await this.credentials.modifyRecord(PASSCODE_RECORD_KEY, () => Promise.resolve({
+      kind: 'grant',
+      payload: verifier,
+    }))
+    if (storedPasscodeVerifier(record) === undefined) {
+      throw new Error('client-connection: passcode verifier credential record was not created')
+    }
+  }
+
+  /**
+   * Remove the stored passcode verifier. Paired browsers keep their sessions;
+   * the login page returns to the pairing-link sign-in page.
+   * @returns fulfillment after the record is removed.
+   */
+  async clearPasscode(): Promise<void> {
+    await this.credentials.deleteRecord(PASSCODE_RECORD_KEY)
   }
 
   /**
@@ -438,7 +574,7 @@ export class BrowserAuth {
         this.writeRedirect(res)
         return false
       }
-      this.writeIndexUnauthorized(req, res)
+      await this.writeIndexUnauthorized(req, res)
       return false
     }
     if (this.isAuthenticated(req, secure)) return true
@@ -446,7 +582,7 @@ export class BrowserAuth {
       await this.authorizePasscode(req, res, secure)
       return false
     }
-    this.writeIndexUnauthorized(req, res)
+    await this.writeIndexUnauthorized(req, res)
     return false
   }
 
@@ -464,8 +600,8 @@ export class BrowserAuth {
     res: ConnectionIndexResponse,
     secure: boolean,
   ): Promise<void> {
-    const passcode = this.configuredPasscode()
-    if (passcode === undefined) {
+    const verifier = await this.passcodeVerifier()
+    if (verifier === undefined) {
       this.writeUnauthorized(req, res)
       return
     }
@@ -483,11 +619,11 @@ export class BrowserAuth {
       return
     }
     const submitted = new URLSearchParams(req.body).get(PASSCODE_FIELD)
-    if (submitted === null) {
+    if (submitted === null || submitted.length > PASSCODE_MAX_LENGTH) {
       this.writePasscodePage(req, res, 400, 'badRequest')
       return
     }
-    if (codeMatches(submitted, passcode)) {
+    if (await this.matchesPasscode(submitted, verifier)) {
       this.passcodeAttempts.delete(key)
       await this.pair(req, authority, res, secure)
       return
@@ -496,10 +632,21 @@ export class BrowserAuth {
     this.writePasscodePage(req, res, 401, 'incorrect')
   }
 
-  /** @returns the passcode when the owner configured a non-empty one, or undefined. */
-  private configuredPasscode(): string | undefined {
-    const value = this.passcode?.get()
-    return value === undefined || value.length === 0 ? undefined : value
+  /** @returns the stored passcode verifier, or undefined when no passcode is set. */
+  private async passcodeVerifier(): Promise<PasscodeVerifier | undefined> {
+    return storedPasscodeVerifier(await this.credentials.readRecord(PASSCODE_RECORD_KEY))
+  }
+
+  /** Derive the submitted passcode with the record's fixed parameters and compare the keys. */
+  private async matchesPasscode(submitted: string, verifier: PasscodeVerifier): Promise<boolean> {
+    const derived = await derivePasscodeKey(submitted, Buffer.from(verifier.salt, 'base64url'), verifier.keyLength, {
+      N: verifier.n,
+      r: verifier.r,
+      p: verifier.p,
+      maxmem: PASSCODE_SCRYPT_MAXMEM,
+    })
+    const expected = Buffer.from(verifier.hash, 'base64url')
+    return derived.byteLength === expected.byteLength && timingSafeEqual(derived, expected)
   }
 
   /** @returns the end of the active block for `key`, or undefined when attempts may proceed. */
@@ -782,13 +929,14 @@ export class BrowserAuth {
    * @param req - index request already known to be unauthenticated.
    * @param res - response owned by this call.
    */
-  private writeIndexUnauthorized(req: ConnectionIndexRequest, res: ConnectionIndexResponse): void {
+  private async writeIndexUnauthorized(req: ConnectionIndexRequest, res: ConnectionIndexResponse): Promise<void> {
     if (req.method === 'POST') {
       this.writeUnauthorized(req, res)
       return
     }
+    const verifier = await this.passcodeVerifier()
     this.writeLoginPage(req, res, 401,
-      this.configuredPasscode() === undefined ? signInRequiredPage() : passcodePage())
+      verifier === undefined ? signInRequiredPage() : passcodePage())
   }
 
   /**

@@ -28,7 +28,7 @@ Neither the advertised URL nor the fence protects the listening port itself, so 
 
 ## Let other devices sign in with a passcode
 
-Sharing the printed URL gives every recipient the same durable pairing credential. To hand out a short shared secret instead, set the Connection `passcode` (at least eight characters) under Settings → General → Remote access, or in the Connection row's config. An unauthenticated browser then sees a passcode page on the root or index URL; a correct submission pairs that browser with its own session cookie, and repeated failures are throttled per peer address. Already paired browsers keep working, and the pairing link keeps working beside the passcode. Clearing the passcode returns unauthenticated browsers to the plain 401 response. Serve the page over TLS before letting the passcode cross an untrusted network.
+Sharing the printed URL gives every recipient the same durable pairing credential. To hand out a short shared secret instead, set an owner passcode (at least twelve characters) under Settings → General → Remote access. The passcode is stored only as a salted scrypt verifier; the plaintext is never persisted. An unauthenticated browser then sees a passcode page on the root or index URL; a correct submission pairs that browser with its own session cookie, and repeated failures are throttled per peer address. Already paired browsers keep working, and the pairing link keeps working beside the passcode. Clearing the passcode returns unauthenticated browsers to the pairing-link sign-in page. Serve the page over TLS before letting the passcode cross an untrusted network.
 
 ## Secure the external leg
 

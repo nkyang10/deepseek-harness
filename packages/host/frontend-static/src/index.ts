@@ -58,8 +58,8 @@ const STATIC_MISS_CODES: ReadonlySet<string | undefined> = new Set([
   'ENOTDIR',
 ])
 
-/** Bound for the passcode form body; one field of at most a few dozen bytes. */
-const INDEX_FORM_BODY_LIMIT_BYTES = 4_096
+/** Bounded index form body; matches Connection's passcode form bound. */
+const INDEX_FORM_BODY_LIMIT_BYTES = 16_384
 
 /**
  * Serve one static request from the dist root.

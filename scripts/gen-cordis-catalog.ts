@@ -87,6 +87,7 @@ export const SERVICE_PAGE: Record<string, string> = {
   credentialsController: 'credentials.md',
   settingsController: 'settings.md',
   opencodeConfigController: 'settings.md',
+  webAccessController: 'settings.md',
   directoryPicker: 'workspace.md',
   deepseekLlmApiExtensions: 'llm-streaming.md',
   dynamicCordisRunner: 'extensions.md',

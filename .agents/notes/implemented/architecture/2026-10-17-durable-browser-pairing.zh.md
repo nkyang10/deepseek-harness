@@ -20,13 +20,13 @@ Desktop 的 Web 监听默认对局域网服务，以便手机访问 GUI（[可�
 
 对同一 authority 已持有会话的浏览器再次配对时，会沿用其身份与配对时间，只刷新过期时间，因此重新打开链接不会堆积孤立记录。
 
-同一配对路径也接受由所有者配置、显示在所服务登录页上的**口令**。匹配的表单 POST 会铸造一个普通的按设备会话 cookie，因此口令只决定谁可以配对，而不是认证一个长期主体；撤销仍然按设备进行。由于口令由人选择，其 POST 在浏览器认证之前先通过 Host/Origin 校验；WebView 或沙箱页面可能以不透明的 `null` Origin 提交该表单，口令 POST 在通过 Host 栅栏后接受它，而 `/api` 请求仍拒绝不透明 Origin。失败次数按直连对端地址计数，连续第十次失败会将该对端封禁一分钟。口令是经脱敏的 settings secret，通过 volatile 配置引用读取，因此所有者可在设置页设置、修改或清除它而无需重启；持久配对链接与它并存。
+同一配对路径也接受由所有者配置、显示在所服务登录页上的**口令**。匹配的表单 POST 会铸造一个普通的按设备会话 cookie，因此口令只决定谁可以配对，而不是认证一个长期主体；撤销仍然按设备进行。由于口令由人选择，其 POST 在浏览器认证之前先通过 Host/Origin 校验；WebView 或沙箱页面可能以不透明的 `null` Origin 提交该表单，口令 POST 在通过 Host 栅栏后接受它，而 `/api` 请求仍拒绝不透明 Origin。失败次数按直连对端地址计数，连续第十次失败会将该对端封禁一分钟。所有者通过设置页写入十二到一千零二十四个字符的口令，设置页只在 `client-connection/passcode-verifier` grant 记录中写入加盐 scrypt 校验记录；口令本身从不持久化，持久配对链接与它并存。校验记录固定的代价参数会被精确校验，畸形记录会响亮失败。
 
-`authorizeIndex` 变为异步，因为一次成功的配对必须先写入会话才能铸造 cookie。这传导到 `serveStatic` 与实验性 inspector 的 DevTools 路由，两者本来就在异步处理函数内。
+`authorizeIndex` 是异步的，因为一次成功的口令提交要先派生密钥，而一次成功的配对要先写入会话，之后二者才能铸造 cookie。这传导到 `serveStatic` 与实验性 inspector 的 DevTools 路由，两者本来就在异步处理函数内。
 
 ## Verification
 
-`packages/client/connection/tests/browser-auth.host.spec.ts` 覆盖重新激活后的持久配对码、每个浏览器各自的会话、重新配对时的身份保留、撤销一个浏览器而其他浏览器与配对码存活、轮换、最后活动上报与过期清理、从会话出现之前的 payload 升级记录、无法读取的存储行响亮失败，以及记录被删除后配对响亮失败。它还覆盖口令页渲染、匹配与畸形提交、按对端的限流与恢复，以及口令页之外已认证路径的行为。`node-half.host.spec.ts` 保持 RPC、Fetch 路由与 WebSocket 升级路径上一致的 401/403 行为，包括口令 POST 的信任栅栏及其不透明 Origin 例外。`packages/host/frontend-static/tests/frontend-static.spec.ts` 通过真实 Loader 组合固定所服务的登录表单、配对重定向、已认证 POST 重定向，以及固定的表单体上限。`apps/desktop/tests/host-process.spec.ts` 固定 IPC 关联、按类型区分的超时，以及对畸形应答的拒绝；`apps/desktop/tests/main-startup.spec.ts` 固定菜单标签、设备列表、取消与确认两条撤销路径，以及轮换之后“复制网页链接”复制的正是新码。
+`packages/client/connection/tests/browser-auth.host.spec.ts` 覆盖重新激活后的持久配对码、每个浏览器各自的会话、重新配对时的身份保留、撤销一个浏览器而其他浏览器与配对码存活、轮换、最后活动上报与过期清理、从会话出现之前的 payload 升级记录、无法读取的存储行响亮失败，以及记录被删除后配对响亮失败。它还覆盖口令页渲染、校验记录的创建与重启、匹配与畸形提交、校验记录读写失败、KDF 失败路径、按对端的限流与恢复，以及口令页之外已认证路径的行为。`packages/api/settings-controller/tests/web-access.host.spec.ts` 覆盖经生成的 Remote namespace 进行的状态、设置、清除与拒绝映射；Web 行与 inject 接线由 `packages/client/ui-settings-general` 测试覆盖。`node-half.host.spec.ts` 保持 RPC、Fetch 路由与 WebSocket 升级路径上一致的 401/403 行为，包括口令 POST 的信任栅栏及其不透明 Origin 例外。`packages/host/frontend-static/tests/frontend-static.spec.ts` 通过真实 Loader 组合固定所服务的登录表单、配对重定向、已认证 POST 重定向，以及固定的表单体上限。`apps/desktop/tests/host-process.spec.ts` 固定 IPC 关联、按类型区分的超时，以及对畸形应答的拒绝；`apps/desktop/tests/main-startup.spec.ts` 固定菜单标签、设备列表、取消与确认两条撤销路径，以及轮换之后“复制网页链接”复制的正是新码。
 
 ## Consequences
 
@@ -34,7 +34,7 @@ Desktop 的 Web 监听默认对局域网服务，以便手机访问 GUI（[可�
 - **`lastSeenAt` 先在内存中发布。** 请求认证是同步的，不能等待凭据文件，因此一次活动标记会更新内存表，持久写入发生在下一次配对、撤销、轮换或 `listBrowserSessions()` 时——后者是该值的唯一消费方。`persist()` 通过取文件值与本次激活值中较新者，把这些观察结果向前合并，因此另一个进程的并发结构性改动不会被覆盖。
 - **此前存在的每个 cookie 都停止通过验证。** 旧 payload 不指明任何设备，接纳它就意味着保留第二条认证路径。该记录的签名密钥在升级中保留，配对码与空表会一并写入，因此唯一可见的效果就是重新配对。
 - **已配对的浏览器仅凭它呈现的内容来识别。** `User-Agent` 是 Host 拥有的唯一人类可读事实，因此两个具有相同该字符串的浏览器在列表中无法分辨。更丰富的身份需要浏览器证明什么，而明文 HTTP 配对无法提出这种要求。
-- **口令是低熵凭据，猜测窗口有界。** 每个直连对端地址连续十次失败后会被封禁一分钟；成功提交会清零计数。分布式攻击者不受单一地址限制，因此把口令暴露到可信网络之外时，部署仍依赖 TLS 与口令本身的长度。登录页带有禁止脚本与框架的 CSP 及 no-referrer，其标记只包含固定的错误标记。
+- **口令是低熵凭据，猜测窗口有界。** 每个直连对端地址连续十次失败后会被封禁一分钟；成功提交会清零计数。分布式攻击者不受单一地址限制，因此把口令暴露到可信网络之外时，部署仍依赖 TLS 与口令本身的长度。存储的校验记录使用固定的 scrypt 代价参数（N=65536、r=8、p=2）、16 字节盐与 32 字节派生密钥；被窃取的凭据记录无法当作口令重放，畸形记录会响亮失败，而不会接受攻击者选择的参数。登录页带有禁止脚本与框架的 CSP 及 no-referrer，其标记只包含固定的错误标记。
 
 ## Alternatives considered
 

@@ -227,6 +227,21 @@ export class HostConnectionService extends Service implements HostConnectionHand
     return this.browserAuth.rotatePairingCode()
   }
 
+  /** Whether an owner passcode verifier is stored. */
+  passcodeSet(): Promise<boolean> {
+    return this.browserAuth.passcodeSet()
+  }
+
+  /** Replace the owner passcode with a one-way verifier. */
+  setPasscode(passcode: string): Promise<void> {
+    return this.browserAuth.setPasscode(passcode)
+  }
+
+  /** Remove the stored passcode verifier without revoking paired browsers. */
+  clearPasscode(): Promise<void> {
+    return this.browserAuth.clearPasscode()
+  }
+
   /**
    * Compose one shared-channel Fetch handler from exact routes and its interceptor.
    * @param channel - shared channel mounted by Connection.

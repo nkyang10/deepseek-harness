@@ -148,6 +148,35 @@ Host service backing the generated `ctx.remote.settings` namespace. Every remote
 
 Source: [`packages/api/settings-controller/src/index.ts`](../../packages/api/settings-controller/src/index.ts)
 
+<a id="ctxwebaccesscontroller--webaccesscontroller"></a>
+
+### `ctx.webAccessController` — `WebAccessController`
+
+Host service backing the generated `ctx.remote.webAccess` namespace. The passcode verifier and its hashing belong to Connection; this controller only transports the write-only facts a configuration page needs.
+
+```ts cordis-catalog
+/**
+ * Report whether the owner has configured a Web login passcode.
+ * @returns the presence fact only; the verifier never crosses the wire.
+ */
+@Remote('status') async status(): Promise<{ configured: boolean }>
+
+/**
+ * Replace the owner passcode with a one-way verifier.
+ * @param passcode - owner-chosen passcode, at least twelve characters.
+ * @returns fulfillment after the verifier is durable.
+ */
+@Remote('setPasscode') async setPasscode(passcode: string): Promise<void>
+
+/**
+ * Remove the stored passcode verifier without revoking paired browsers.
+ * @returns fulfillment after the record is removed.
+ */
+@Remote('clearPasscode') async clearPasscode(): Promise<void>
+```
+
+Source: [`packages/api/settings-controller/src/web-access.ts`](../../packages/api/settings-controller/src/web-access.ts)
+
 <a id="settings-events"></a>
 
 ### `settings/*` events

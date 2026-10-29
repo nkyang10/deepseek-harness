@@ -9,6 +9,7 @@ import { describe, expect, onTestFinished, vi } from 'vitest'
 import type {} from '@deepseek-ai/dsh-client-ui-renderer/client'
 import { ok, type RemoteMock } from '@deepseek-ai/dsh-remote-mock'
 import type { SettingsNamespaceView } from '@deepseek-ai/dsh-settings/types'
+import { RemoteError } from '@deepseek-ai/dsh-client-test-runtime'
 import { createClientTest, type TestClient, webApp } from '@deepseek-ai/dsh-client-test-runtime/src/assembly/index.ts'
 import { graphFromRoster } from '@deepseek-ai/dsh-client-test-runtime/src/assembly/roster.ts'
 import { resolveSlotLabel } from '@deepseek-ai/dsh-client-ui-slots'
@@ -16,6 +17,7 @@ import { LOCALE_SETTINGS_NAMESPACE, LocaleSettingsSchema } from '@deepseek-ai/ds
 import { inject } from '../src/client/index.ts'
 import type { DeveloperToolsRowInjected } from '../src/client/DeveloperToolsRow.tsx'
 import { HostReleasePrompt, type HostReleasePromptInjected } from '../src/client/HostReleasePrompt.tsx'
+import type { WebAccessRowInjected } from '../src/client/WebAccessRow.tsx'
 import { CloseLabel, HeaderContent, TriggerContent } from '../src/client/chrome.tsx'
 import { GeneralSection } from '../src/client/GeneralSection.tsx'
 import { SettingsDocumentAction } from '../src/client/SettingsDocumentAction.tsx'
@@ -54,6 +56,9 @@ function localeView(preference: string, revision = 0): SettingsNamespaceView {
 async function client(mock: RemoteMock, start: () => Promise<TestClient>, hasDocument = false) {
   const settings = mock.remote.settings
   settings.describe.mockResolvedValue(ok({ writable: true, hasDocument, namespaces: [localeView('zh')] }))
+  mock.remote.webAccess.status.mockResolvedValue(ok({ configured: false }))
+  mock.remote.webAccess.setPasscode.mockResolvedValue(ok(undefined))
+  mock.remote.webAccess.clearPasscode.mockResolvedValue(ok(undefined))
   const c = await start()
   // The locale adopts the Host preference once the describe mirror holds the document.
   await c.ctx.configForms.describe().ensure()
@@ -91,7 +96,7 @@ function setPageUrl(url: string): void {
 
 describe('ui-settings-general apply', () => {
   it('declares the services it uses', () => {
-    expect(inject).toEqual(['slots', 'locale', 'connection', 'remote', 'remote.settings', 'configForms', 'shortcuts', 'modules'])
+    expect(inject).toEqual(['slots', 'locale', 'connection', 'remote', 'remote.settings', 'remote.webAccess', 'configForms', 'shortcuts', 'modules'])
   })
 
   it('fills the five seats of the shell it declares, with the locale-following General label', async ({ mock, start }) => {
@@ -104,7 +109,7 @@ describe('ui-settings-general apply', () => {
     expect(generalLabel(c)).toBe('通用设置')
     expect(c.ctx.slots.spec('settings.general.item')).toEqual({ kind: 'list', scope: 'root' })
     // The shared developer-tool control belongs to General; onboarding remains feature-owned.
-    expect(c.ctx.slots.entries('settings.general.item').filter(row => row.locale === NS).map(row => row.options.id)).toEqual(['developer-tools', 'current-version'])
+    expect(c.ctx.slots.entries('settings.general.item').filter(row => row.locale === NS).map(row => row.options.id)).toEqual(['developer-tools', 'web-access', 'current-version'])
     expect(c.ctx.slots.entries('settings.onboarding').filter(row => row.locale === NS)).toEqual([])
     const developerRow = c.ctx.slots.entries('settings.general.item').find(row => row.options.id === 'developer-tools')!
     const developer = (developerRow.inject as unknown as () => DeveloperToolsRowInjected)()
@@ -253,7 +258,7 @@ describe('ui-settings-general apply', () => {
       expect(ownEntries(c, name)[0]).not.toBe(before[index])
     })
     expect(c.ctx.slots.spec('settings.general.item')).toEqual({ kind: 'list', scope: 'root' })
-    expect(c.ctx.slots.entries('settings.general.item').filter(row => row.locale === NS).map(row => row.options.id)).toEqual(['developer-tools', 'current-version'])
+    expect(c.ctx.slots.entries('settings.general.item').filter(row => row.locale === NS).map(row => row.options.id)).toEqual(['developer-tools', 'web-access', 'current-version'])
     // The recovered registrations still ride the locale path.
     const english = localeView('en', 1)
     const chinese = localeView('zh', 2)
@@ -271,40 +276,68 @@ describe('ui-settings-general apply', () => {
     })
   })
 
-  it('seats the remote-access passcode row only while Connection settings are served', async ({ mock, start }) => {
+  it('seats the remote-access passcode row', async ({ mock, start }) => {
     const { c } = await client(mock, start)
     const rows = () => c.ctx.slots.entries('settings.general.item').filter(row => row.locale === NS)
-    expect(rows().map(row => row.options.id)).toEqual(['developer-tools', 'current-version'])
+    expect(rows().map(row => row.options.id)).toEqual(['developer-tools', 'web-access', 'current-version'])
 
-    const connection: SettingsNamespaceView = {
-      ns: 'connection',
-      schema: {},
-      value: {},
-      autoGenerate: false,
-      applies: 'live',
-      secrets: [{ path: ['passcode'], set: false }],
-      revision: 0,
-    }
-    c.ctx.configForms.describe().acceptView(connection)
     const row = rows().find(candidate => candidate.options.id === 'web-access')
     expect(row).toBeDefined()
     const face = row!.inject!()
-    const savePasscode = face.savePasscode
-    const clearPasscode = face.clearPasscode
-    if (typeof savePasscode !== 'function' || typeof clearPasscode !== 'function') {
+    const { savePasscode, clearPasscode, hooks } = face
+    if (typeof savePasscode !== 'function' || typeof clearPasscode !== 'function'
+      || typeof hooks !== 'object' || hooks === null) {
       throw new Error('web-access row lacks its passcode writers')
     }
-    const form = c.ctx.configForms.get<{ passcode?: string }>('connection')
-    const set = vi.spyOn(form, 'set').mockResolvedValue(true)
-    const unset = vi.spyOn(form, 'unset').mockResolvedValue(true)
-    expect(await savePasscode('long-enough')).toBe(true)
-    expect(set).toHaveBeenCalledExactlyOnceWith('passcode', 'long-enough')
-    expect(await clearPasscode()).toBe(true)
-    expect(unset).toHaveBeenCalledExactlyOnceWith('passcode')
+    const injected = { savePasscode, clearPasscode, hooks } as WebAccessRowInjected
+    const notified = vi.fn()
+    const unsubscribe = injected.hooks.webAccess.subscribe(notified)
+    expect(injected.hooks.webAccess.getSnapshot()).toBe(false)
+    expect(await injected.savePasscode('long-enough-1')).toBe(true)
+    expect(notified).toHaveBeenCalledOnce()
+    expect(mock.remote.webAccess.setPasscode).toHaveBeenCalledExactlyOnceWith('long-enough-1')
+    expect(injected.hooks.webAccess.getSnapshot()).toBe(true)
+
+    mock.remote.webAccess.setPasscode.mockResolvedValueOnce({
+      ok: false,
+      error: new RemoteError('web-access/rejected', 'rejected', { operation: 'setPasscode' }),
+    })
+    expect(await injected.savePasscode('long-enough-1')).toBe(false)
+    expect(injected.hooks.webAccess.getSnapshot()).toBe(true)
+
+    expect(await injected.clearPasscode()).toBe(true)
+    expect(mock.remote.webAccess.clearPasscode).toHaveBeenCalledOnce()
+    expect(injected.hooks.webAccess.getSnapshot()).toBe(false)
+
+    mock.remote.webAccess.clearPasscode.mockResolvedValueOnce({
+      ok: false,
+      error: new RemoteError('web-access/rejected', 'rejected', { operation: 'clearPasscode' }),
+    })
+    expect(await injected.clearPasscode()).toBe(false)
+    expect(injected.hooks.webAccess.getSnapshot()).toBe(false)
+    expect(notified).toHaveBeenCalledTimes(2)
+    unsubscribe()
 
     await c.unload(SELF)
     await c.flush()
     expect(rows()).toEqual([])
+  })
+
+  it('keeps the status source when web-access status calls fail', async ({ mock, start }) => {
+    const { c } = await client(mock, start)
+    expect(mock.remote.webAccess.status).toHaveBeenCalledOnce()
+
+    mock.remote.webAccess.status.mockRejectedValueOnce(new Error('offline'))
+    await c.reload(SELF)
+    await c.flush()
+
+    mock.remote.webAccess.status.mockResolvedValueOnce({
+      ok: false,
+      error: new RemoteError('web-access/unavailable', 'unavailable', {}),
+    })
+    await c.reload(SELF)
+    await c.flush()
+    expect(mock.remote.webAccess.status).toHaveBeenCalledTimes(3)
   })
 
   it('removes every seat and the item declaration when its row unloads', async ({ mock, start }) => {

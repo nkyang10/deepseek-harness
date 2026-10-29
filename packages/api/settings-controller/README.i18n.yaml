@@ -3,26 +3,26 @@
 # After editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write packages/api/settings-controller/README.md
 /:
-  en: f88570734178e0b7
-  zh: 6336d2a89cb13d89
+  en: d5ebc52de5b4f929
+  zh: 038b2a8e2e93f4a6
 /settings-controller:
   en: 7fecb4d8800e8f97
   zh: 3e2c3fdb29b73cd0
 /settings-controller/summary:
-  en: f459a5b7bc4a68ea
-  zh: 95f021dbb1e5a1b1
+  en: a59195d009be4e27
+  zh: d58c9295d82667a6
 /settings-controller/table-of-contents:
   en: 3a654e12f423946b
   zh: 4e3a19aaee58f8a7
 /settings-controller/use-this-package:
-  en: 4bd4f6859fc41743
-  zh: 1525ea27162905fc
+  en: 572f8ee8bf0badfb
+  zh: dc3b5a0e55d1e340
 /settings-controller/configuration:
   en: e0297f144b649af7
   zh: e70ed56edffd97f0
 /settings-controller/model-experience:
-  en: 8bbe4800c9ac9077
-  zh: a672a7a6636865ce
+  en: 5ab599cea22f11e6
+  zh: 792e071dee0cffa7
 /settings-controller/model-experience/kv-cache-effect:
   en: 740c7814748fc2d1
   zh: 0cff374d4e5272ff

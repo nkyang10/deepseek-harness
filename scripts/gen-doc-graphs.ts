@@ -329,6 +329,20 @@ const SERVICE_ROLES: ServiceRole[] = [
     note: 'Projects the user-settings seam onto the generated Remote namespace: the read is always redacted and every refusal is classified here, not on the seam Definition.',
   },
   {
+    key: 'opencodeConfigController',
+    pkg: 'api-settings-controller',
+    title: 'Host OpenCode config Remote controller',
+    mode: 'core',
+    note: 'Reads the Host-default OpenCode configuration through the generated Remote namespace; candidate resolution and refusal classification live here, not in the browser.',
+  },
+  {
+    key: 'webAccessController',
+    pkg: 'api-settings-controller',
+    title: 'Host Web access Remote controller',
+    mode: 'core',
+    note: 'Moves passcode status and write-only set or clear requests over the generated Remote namespace; hashing and verifier storage stay in Connection.',
+  },
+  {
     key: 'workspaceFiles',
     pkg: 'api-workspace-files',
     title: 'Host workspace file Remote service',

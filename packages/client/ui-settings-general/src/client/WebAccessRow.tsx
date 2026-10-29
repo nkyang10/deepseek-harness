@@ -1,19 +1,18 @@
 /** General Settings control for the owner-configured Web login passcode. */
 import { useState } from 'react'
 import { Button, Input } from '@deepseek-ai/dsh-client-ui-primitives'
+import type { ObservableSnapshot } from '@deepseek-ai/dsh-client-store'
 import type { SettingsDescribeFace } from '@deepseek-ai/dsh-client-ui-settings/client'
 import type { InjectFace, PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import css from './WebAccessRow.module.css'
 
-/** The Connection entry id whose Config carries the passcode. */
-export const CONNECTION_SETTINGS_NAMESPACE = 'connection'
+/** Mirror the Host bounds; the Host remains the validating authority. */
+const MIN_PASSCODE_LENGTH = 12
+const MAX_PASSCODE_LENGTH = 1_024
 
-/** Mirror the Host schema minimum; the Host remains the validating authority. */
-const MIN_PASSCODE_LENGTH = 8
-
-/** Write-only passcode field and the settings mirror that reports its presence. */
+/** Write-only passcode field plus the Host-reported presence fact. */
 export interface WebAccessRowInjected {
-  hooks: { settings: SettingsDescribeFace }
+  hooks: { settings: SettingsDescribeFace; webAccess: ObservableSnapshot<boolean> }
   savePasscode(value: string): Promise<boolean>
   clearPasscode(): Promise<boolean>
 }
@@ -26,13 +25,11 @@ type WebAccessError = 'tooShort' | 'saveFailed'
  * @param props - settings mirror, writers, and localized copy.
  * @returns the General Settings row.
  */
-export function WebAccessRow({ useSettings, savePasscode, clearPasscode, t }:
+export function WebAccessRow({ useSettings, useWebAccess, savePasscode, clearPasscode, t }:
   PropsRuntime<'settings.general.item'> & PropsLocale<'settings'> & InjectFace<WebAccessRowInjected>) {
   const snapshot = useSettings(value => value)
-  const connection = snapshot.view?.namespaces.find(row => row.ns === CONNECTION_SETTINGS_NAMESPACE)
-  const configured = connection?.secrets.some(secret =>
-    secret.path.length === 1 && secret.path[0] === 'passcode' && secret.set) === true
-  const writable = snapshot.view?.writable === true && connection !== undefined
+  const configured = useWebAccess(value => value)
+  const writable = snapshot.view?.writable === true
   const [value, setValue] = useState('')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<WebAccessError>()
@@ -78,6 +75,7 @@ export function WebAccessRow({ useSettings, savePasscode, clearPasscode, t }:
           placeholder={t('webAccess.placeholder')}
           aria-label={t('webAccess.title')}
           autoComplete="new-password"
+          maxLength={MAX_PASSCODE_LENGTH}
           disabled={busy || !writable}
         />
         <Button type="submit" variant="primary" size="sm" disabled={busy || !writable || value.length === 0}>

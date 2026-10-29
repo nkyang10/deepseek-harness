@@ -243,6 +243,7 @@ describe('remote access passcode', () => {
 
   function mount(init: {
     view?: SettingsMirrorSnapshot['view']
+    configured?: boolean
     savePasscode?: (value: string) => Promise<boolean>
     clearPasscode?: () => Promise<boolean>
   }) {
@@ -255,6 +256,7 @@ describe('remote access passcode', () => {
       {...kit}
       t={t}
       useSettings={bindSnapshotSelector(state)}
+      useWebAccess={selector => selector(init.configured === true)}
       savePasscode={savePasscode}
       clearPasscode={clearPasscode}
     />)
@@ -267,7 +269,7 @@ describe('remote access passcode', () => {
     expect(screen.getByLabelText('Remote access').hasAttribute('disabled')).toBe(true)
     missing.view.unmount()
 
-    mount({ view: { namespaces: [connectionView(true)], writable: false, hasDocument: false } })
+    mount({ view: { namespaces: [connectionView(true)], writable: false, hasDocument: false }, configured: true })
     expect(screen.getByRole('button', { name: 'Save' }).hasAttribute('disabled')).toBe(true)
     expect(screen.getByRole('button', { name: 'Clear passcode' }).hasAttribute('disabled')).toBe(true)
     expect(screen.queryByText('A passcode is set.')).toBeTruthy()
@@ -286,24 +288,25 @@ describe('remote access passcode', () => {
     expect(screen.queryByRole('button', { name: 'Clear passcode' })).toBeNull()
     const input = screen.getByLabelText('Remote access') as HTMLInputElement
     const save = screen.getByRole('button', { name: 'Save' })
+    expect(input.maxLength).toBe(1_024)
     expect(save.hasAttribute('disabled')).toBe(true)
 
     fireEvent.change(input, { target: { value: 'short' } })
     fireEvent.click(save)
-    expect((screen.getByRole('alert')).textContent).toBe('The passcode must be at least 8 characters.')
+    expect((screen.getByRole('alert')).textContent).toBe('The passcode must be at least 12 characters.')
     expect(savePasscode).not.toHaveBeenCalled()
 
-    fireEvent.change(input, { target: { value: 'long-enough' } })
+    fireEvent.change(input, { target: { value: 'long-enough-1' } })
     fireEvent.click(save)
-    await waitFor(() => { expect(savePasscode).toHaveBeenCalledWith('long-enough') })
+    await waitFor(() => { expect(savePasscode).toHaveBeenCalledWith('long-enough-1') })
     await waitFor(() => { expect(input.value).toBe('') })
     expect(screen.queryByRole('alert')).toBeNull()
 
-    fireEvent.change(input, { target: { value: 'again-long' } })
+    fireEvent.change(input, { target: { value: 'again-long-1' } })
     fireEvent.click(save)
     expect((await screen.findByRole('alert')).textContent).toBe('Could not save. Please try again.')
 
-    fireEvent.change(input, { target: { value: 'third-time' } })
+    fireEvent.change(input, { target: { value: 'third-time-1' } })
     fireEvent.click(save)
     await waitFor(() => { expect(savePasscode).toHaveBeenCalledTimes(3) })
     expect((await screen.findByRole('alert')).textContent).toBe('Could not save. Please try again.')
@@ -317,6 +320,7 @@ describe('remote access passcode', () => {
       .mockResolvedValueOnce(true)
     mount({
       view: { namespaces: [connectionView(true)], writable: true, hasDocument: true },
+      configured: true,
       clearPasscode,
     })
     const clear = screen.getByRole('button', { name: 'Clear passcode' })

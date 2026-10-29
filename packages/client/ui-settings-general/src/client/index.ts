@@ -12,6 +12,7 @@ import type { Context as ClientContext } from '@deepseek-ai/cordis'
 // Type-only: pulls the ctx.remote merge and its fixed Host facts.
 import type {} from '@deepseek-ai/dsh-api-remotes/client'
 import type { ConnectionHandle } from '@deepseek-ai/dsh-client-connection/client'
+import type { ObservableSnapshot } from '@deepseek-ai/dsh-client-store'
 // Type-only: pulls the ctx.modules merge.
 import type {} from '@deepseek-ai/dsh-client-modules/client'
 import { resolveSlotLabel } from '@deepseek-ai/dsh-client-ui-slots'
@@ -37,7 +38,7 @@ import { CloseLabel, HeaderContent, TriggerContent } from './chrome.tsx'
 import { GeneralSection } from './GeneralSection.tsx'
 import { CurrentVersionRow } from './CurrentVersionRow.tsx'
 import { DeveloperToolsRow, type DeveloperToolsRowInjected } from './DeveloperToolsRow.tsx'
-import { CONNECTION_SETTINGS_NAMESPACE, WebAccessRow, type WebAccessRowInjected } from './WebAccessRow.tsx'
+import { WebAccessRow, type WebAccessRowInjected } from './WebAccessRow.tsx'
 import { SettingsDocumentAction } from './SettingsDocumentAction.tsx'
 import type { SettingsDocumentActionInjected } from './SettingsDocumentAction.tsx'
 import { SettingsDocumentStore } from './settings-document-store.ts'
@@ -70,7 +71,7 @@ const NS = 'settings'
  * ui-settings' apply, whose activation order relative to this one is NOT
  * constrained; registrations depend on their slots through `slots.inject()`.
  */
-export const inject = ['slots', 'locale', 'connection', 'remote', 'remote.settings', 'configForms', 'shortcuts', 'modules']
+export const inject = ['slots', 'locale', 'connection', 'remote', 'remote.settings', 'remote.webAccess', 'configForms', 'shortcuts', 'modules']
 
 /**
  * Register the `settings` dictionaries, the chrome content, and the General
@@ -85,19 +86,47 @@ export function apply(ctx: ClientContext): void {
       setEnabled: enabled => ctx.configForms.developerTools.setEnabled(enabled),
     }),
   }, DeveloperToolsRow))
-  // Remote browsers sign in with this owner-configured passcode. The row is
-  // present only when the deployment actually serves the Connection entry.
-  ctx.effect(() => ctx.configForms.whileServed([CONNECTION_SETTINGS_NAMESPACE], () => {
-    const connectionForm = ctx.configForms.get<{ passcode?: string }>(CONNECTION_SETTINGS_NAMESPACE)
-    return ctx.slots.inject('settings.general.item', () => ctx.slots.register({
-      name: 'settings.general.item', id: 'web-access', order: 20, locale: NS,
-      inject: (): WebAccessRowInjected => ({
-        hooks: { settings: ctx.configForms.describe() },
-        savePasscode: value => connectionForm.set('passcode', value),
-        clearPasscode: () => connectionForm.unset('passcode'),
-      }),
-    }, WebAccessRow))
-  }), 'ui-settings-general: web access row')
+  let passcodeConfigured = false
+  const passcodeListeners = new Set<() => void>()
+  const publishPasscode = (configured: boolean): void => {
+    if (passcodeConfigured === configured) return
+    passcodeConfigured = configured
+    for (const listener of [...passcodeListeners]) listener()
+  }
+  const passcodeSource: ObservableSnapshot<boolean> = {
+    getSnapshot: () => passcodeConfigured,
+    subscribe: (listener) => {
+      passcodeListeners.add(listener)
+      return () => { passcodeListeners.delete(listener) }
+    },
+  }
+  const refreshPasscode = async (): Promise<void> => {
+    const response = await ctx.remote.webAccess.status()
+    if (response.ok) publishPasscode(response.value.configured)
+  }
+  // Remote browsers sign in with this owner-configured passcode. The injected
+  // `remote.webAccess` service is the deployment capability; Connection's
+  // config is not a settings namespace, so it cannot gate this row.
+  /* v8 ignore next -- RemoteResult carries failures; only an assembly fault rejects, leaving the last known value. */
+  void refreshPasscode().catch(() => {})
+  ctx.slots.inject('settings.general.item', () => ctx.slots.register({
+    name: 'settings.general.item', id: 'web-access', order: 20, locale: NS,
+    inject: (): WebAccessRowInjected => ({
+      hooks: { settings: ctx.configForms.describe(), webAccess: passcodeSource },
+      savePasscode: async (value) => {
+        const response = await ctx.remote.webAccess.setPasscode(value)
+        if (!response.ok) return false
+        publishPasscode(true)
+        return true
+      },
+      clearPasscode: async () => {
+        const response = await ctx.remote.webAccess.clearPasscode()
+        if (!response.ok) return false
+        publishPasscode(false)
+        return true
+      },
+    }),
+  }, WebAccessRow))
   // Version information follows the core preferences.
   ctx.slots.inject('settings.general.item', () => ctx.slots.register({
     name: 'settings.general.item', id: 'current-version', order: 100, locale: NS,

@@ -37,6 +37,10 @@ declare module '@deepseek-ai/dsh-typert-protocol' {
     'opencode-config/read-failed': { readonly path: string }
     /** The first existing candidate is not UTF-8 text. */
     'opencode-config/not-text': { readonly path: string }
+    /** The Host cannot reach the Connection service that owns the passcode verifier. */
+    'web-access/unavailable': {}
+    /** The passcode verifier could not be written or removed. */
+    'web-access/rejected': { readonly operation: 'setPasscode' | 'clearPasscode' }
   }
 }
 

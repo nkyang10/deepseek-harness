@@ -177,6 +177,26 @@ revokeBrowserSession(id: BrowserDeviceId): Promise<void>
  * browsers while already paired browsers keep their sessions.
  */
 rotatePairingCode(): Promise<void>
+
+/**
+ * Whether an owner passcode verifier is stored.
+ * @returns true when a readable passcode verifier is configured.
+ */
+passcodeSet(): Promise<boolean>
+
+/**
+ * Replace the owner passcode with a salt-and-scrypt verifier. The plaintext
+ * passcode is never persisted.
+ * @param passcode - owner-chosen passcode, at least twelve characters.
+ * @returns fulfillment after the verifier is durable.
+ */
+setPasscode(passcode: string): Promise<void>
+
+/**
+ * Remove the stored passcode verifier without revoking paired browsers.
+ * @returns fulfillment after the record is removed.
+ */
+clearPasscode(): Promise<void>
 ```
 
 Types: [Principal](typert.zh.md)

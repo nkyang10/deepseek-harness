@@ -32,10 +32,9 @@ afterEach(async () => {
 /**
  * Write a dist fixture and the authenticated Web rows, then boot them through
  * the real Loader.
- * @param passcode - optional owner passcode for the Connection row.
  * @returns the booted Context.
  */
-async function loadComposition(passcode?: string): Promise<Context> {
+async function loadComposition(): Promise<Context> {
   root = await mkdtemp(join(tmpdir(), 'dsh-frontend-static-'))
   const dist = join(root, 'dist')
   await mkdir(dist)
@@ -56,7 +55,6 @@ async function loadComposition(passcode?: string): Promise<Context> {
     "    host: '127.0.0.1'",
     '    port: 0',
     "- name: '@deepseek-ai/dsh-client-connection'",
-    ...passcode === undefined ? [] : ['  config:', `    passcode: '${passcode}'`],
     '- id: frontend',
     "  name: '@deepseek-ai/dsh-host-frontend-static'",
     '  config:',
@@ -233,7 +231,8 @@ describe('real Loader composition', () => {
   })
 
   it('serves a passcode login form, pairs the browser, and refuses oversized submissions', { timeout: 60_000 }, async () => {
-    const loaded = await loadComposition('correct-horse')
+    const loaded = await loadComposition()
+    await loaded.connection.setPasscode('correct-horse')
     const port = loaded.webServer.port
     const form = { 'content-type': 'application/x-www-form-urlencoded' }
 
@@ -251,7 +250,7 @@ describe('real Loader composition', () => {
     expect(wrong.body).toContain('Incorrect passcode. Try again.')
 
     expect(await request(port, '/', {
-      method: 'POST', headers: form, body: `passcode=${'x'.repeat(5_000)}`, redirect: 'manual',
+      method: 'POST', headers: form, body: `passcode=${'x'.repeat(20_000)}`, redirect: 'manual',
     })).toEqual({ status: 413, type: null, body: '' })
 
     // A chunked body has no declared length, so the same bound applies while
@@ -260,7 +259,7 @@ describe('real Loader composition', () => {
       method: 'POST', headers: form, redirect: 'manual', duplex: 'half',
       body: new ReadableStream({
         start(controller) {
-          controller.enqueue(new TextEncoder().encode(`passcode=${'x'.repeat(5_000)}`))
+          controller.enqueue(new TextEncoder().encode(`passcode=${'x'.repeat(20_000)}`))
           controller.close()
         },
       }),

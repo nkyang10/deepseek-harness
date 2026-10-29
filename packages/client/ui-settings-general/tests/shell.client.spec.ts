@@ -6,6 +6,7 @@
  * roster's Connection, and it survives a Loader rebuild of the declarer.
  */
 import { describe, expect, onTestFinished, vi } from 'vitest'
+import { ok, type RemoteMock } from '@deepseek-ai/dsh-remote-mock'
 import type {} from '@deepseek-ai/dsh-client-ui-renderer/client'
 import { createClientTest, type TestClient, webApp } from '@deepseek-ai/dsh-client-test-runtime/src/assembly/index.ts'
 import { inject } from '../src/client/index.ts'
@@ -18,6 +19,11 @@ const SIDEBAR = '@deepseek-ai/dsh-client-ui-sidebar'
 const it = createClientTest({ roster: webApp })
 /** The whole roster's first boot pays the cold module transform of every plugin package. */
 const COLD_BOOT_TIMEOUT_MS = 60_000
+
+async function startSettings(mock: RemoteMock, start: () => Promise<TestClient>): Promise<TestClient> {
+  mock.remote.webAccess.status.mockResolvedValue(ok({ configured: false }))
+  return start()
+}
 
 function injectedOf(c: TestClient): SettingsRootInjected {
   const entry = c.ctx.slots.entries('sidebar.settings')[0]!
@@ -49,7 +55,7 @@ const PRODUCT_ONBOARDING: readonly { id: string; order: number }[] = [
 ]
 
 describe('ui-settings-general shell', () => {
-  it('shares one carrier subscription between both update locations and releases it on unload', async ({ start }) => {
+  it('shares one carrier subscription between both update locations and releases it on unload', async ({ mock, start }) => {
     const initial = Promise.withResolvers<DesktopUpdatePresentation>()
     let publish: ((state: DesktopUpdatePresentation) => void) | undefined
     const off = vi.fn()
@@ -57,7 +63,7 @@ describe('ui-settings-general shell', () => {
     const open = vi.fn(async () => {})
     vi.stubGlobal('dshDesktop', { protocolVersion: 1, updates: { status: () => initial.promise, subscribe, open } })
     onTestFinished(() => { vi.unstubAllGlobals(); initial.resolve({ phase: 'idle' }) })
-    const c = await start()
+    const c = await startSettings(mock, start)
     const row = injectedOf(c)
     const badge = (c.ctx.slots.entries('sidebar.toggle.badge')[0]!.inject as () => Pick<SettingsRootInjected, 'hooks'>)()
     expect(badge.hooks.desktopUpdate).toBe(row.hooks.desktopUpdate)
@@ -77,17 +83,17 @@ describe('ui-settings-general shell', () => {
   }, COLD_BOOT_TIMEOUT_MS)
 
   it('declares its services', () => {
-    expect(inject).toEqual(['slots', 'locale', 'connection', 'remote', 'remote.settings', 'configForms', 'shortcuts', 'modules'])
+    expect(inject).toEqual(['slots', 'locale', 'connection', 'remote', 'remote.settings', 'remote.webAccess', 'configForms', 'shortcuts', 'modules'])
   })
 
-  it('occupies sidebar.settings, declared by ui-sidebar, and declares every child slot', async ({ start }) => {
-    const c = await start()
+  it('occupies sidebar.settings, declared by ui-sidebar, and declares every child slot', async ({ mock, start }) => {
+    const c = await startSettings(mock, start)
     expect(c.ctx.slots.entries('sidebar.settings').map(entry => entry.component)).toEqual([SettingsRoot])
     for (const name of CHILD_NAMES) expect(c.ctx.slots.spec(name)).toEqual(CHILD_SPECS[name])
   }, COLD_BOOT_TIMEOUT_MS)
 
-  it('projects the section ledger: product sections in order, defaults for bare rows, stable snapshots', async ({ start }) => {
-    const c = await start()
+  it('projects the section ledger: product sections in order, defaults for bare rows, stable snapshots', async ({ mock, start }) => {
+    const c = await startSettings(mock, start)
     const { sections } = injectedOf(c).hooks
     const product = sections.getSnapshot()
     expect(product.map(row => row.id)).toEqual(PRODUCT_SECTIONS)
@@ -109,8 +115,8 @@ describe('ui-settings-general shell', () => {
     off()
   })
 
-  it('shows Account first only while signed in and removes it on sign-out', async ({ start }) => {
-    const c = await start()
+  it('shows Account first only while signed in and removes it on sign-out', async ({ mock, start }) => {
+    const c = await startSettings(mock, start)
     const { sections } = injectedOf(c).hooks
     await c.mock.streams.opened('account/watch', 1)
     expect(sections.getSnapshot().map(row => row.id)).toEqual(PRODUCT_SECTIONS)
@@ -124,8 +130,8 @@ describe('ui-settings-general shell', () => {
     await vi.waitFor(() => { expect(sections.getSnapshot().map(row => row.id)).toEqual(PRODUCT_SECTIONS) })
   })
 
-  it('projects the roster Connection control without copying its state; reconnect opens a new $events generation', async ({ start }) => {
-    const c = await start()
+  it('projects the roster Connection control without copying its state; reconnect opens a new $events generation', async ({ mock, start }) => {
+    const c = await startSettings(mock, start)
     const injected = injectedOf(c)
     expect(injected.hooks.connectionState).toBe(c.connection.state)
     expect(injected.hooks.connectionState.getSnapshot()).toBe('connected')
@@ -134,8 +140,8 @@ describe('ui-settings-general shell', () => {
     await vi.waitFor(() => { expect(c.connection.state.getSnapshot()).toBe('connected') })
   })
 
-  it('projects onboarding entries into stable coordinator order', async ({ start }) => {
-    const c = await start()
+  it('projects onboarding entries into stable coordinator order', async ({ mock, start }) => {
+    const c = await startSettings(mock, start)
     const { onboardingSteps } = injectedOf(c).hooks
     expect(onboardingSteps.getSnapshot()).toEqual(PRODUCT_ONBOARDING)
     c.ctx.slots.register({ name: 'settings.onboarding', id: 'credential', order: 0 } as never, () => null)
@@ -156,8 +162,8 @@ describe('ui-settings-general shell', () => {
     off()
   })
 
-  it('re-registers after the declarer reloads: the cascade removes the shell, the rebuilt declaration takes it back', async ({ start }) => {
-    const c = await start()
+  it('re-registers after the declarer reloads: the cascade removes the shell, the rebuilt declaration takes it back', async ({ mock, start }) => {
+    const c = await startSettings(mock, start)
     const before = c.ctx.slots.entries('sidebar.settings')[0]
     expect(before).toBeDefined()
     await c.reload(SIDEBAR)
@@ -167,8 +173,8 @@ describe('ui-settings-general shell', () => {
     for (const name of CHILD_NAMES) expect(c.ctx.slots.spec(name)).toEqual(CHILD_SPECS[name])
   })
 
-  it('unregisters the shell and collapses every child slot when its row unloads', async ({ start }) => {
-    const c = await start()
+  it('unregisters the shell and collapses every child slot when its row unloads', async ({ mock, start }) => {
+    const c = await startSettings(mock, start)
     await c.unload(SELF)
     await c.flush()
     expect(c.ctx.slots.entries('sidebar.settings')).toHaveLength(0)

@@ -1,12 +1,19 @@
 /** Browser pairing, per-device session cookies, and revocation behavior. */
 
-import { createHmac } from 'node:crypto'
+import { createHmac, scrypt } from 'node:crypto'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { CredentialProvider } from '@deepseek-ai/dsh-credentials'
 import type { PeerId } from '@deepseek-ai/dsh-typert-protocol'
 import { BrowserAuth } from '../src/browser-auth.ts'
 import type { ConnectionIndexRequest, ConnectionIndexResponse } from '../src/rpc.ts'
 import { RecordCredentials } from './browser-credentials.ts'
+
+vi.mock('node:crypto', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('node:crypto')>()
+  return { ...actual, scrypt: vi.fn(actual.scrypt) }
+})
+
+const scryptMock = vi.mocked(scrypt)
 
 const UNAUTHORIZED_BODY = 'dsh web authentication required; pair again from the application that serves this page.\n'
 const LOGIN_CSP = "default-src 'none'; style-src 'unsafe-inline'; form-action 'self'; frame-ancestors 'none'"
@@ -18,7 +25,7 @@ function signedCookie(store: RecordCredentials, name: string, payload: unknown):
   return signedBodyCookie(store, name, body)
 }
 
-function signedBodyCookie(store: RecordCredentials, name: string, body: string): string {
+function signedBodyCookie(store: RecordCredentials, name: string, body: string, version = 'v1'): string {
   const record = store.record
   if (record?.kind !== 'grant' || typeof record.payload !== 'object' || record.payload === null) {
     throw new Error('test credential store has no signing secret')
@@ -26,7 +33,7 @@ function signedBodyCookie(store: RecordCredentials, name: string, body: string):
   const secret: unknown = Reflect.get(record.payload, 'secret')
   if (typeof secret !== 'string') throw new Error('test credential record has no string secret')
   const signature = createHmac('sha256', Buffer.from(secret, 'base64url')).update(body).digest('base64url')
-  return `${name}=v1.${body}.${signature}`
+  return `${name}=${version}.${body}.${signature}`
 }
 
 interface ResponseState {
@@ -75,13 +82,11 @@ function request(url: string, authority = '127.0.0.1:3080', init?: {
   }
 }
 
-/** Create authentication over one store whose passcode the test may change. */
-function passcodeAuth(store: RecordCredentials, initial: string | undefined = 'correct-horse') {
-  let current: string | undefined = initial
-  return {
-    set(value: string | undefined) { current = value },
-    auth: BrowserAuth.create(credentials(store), 30, { get: () => current }),
-  }
+/** Create authentication over one store and store a verifier for the given passcode. */
+async function passcodeAuth(store: RecordCredentials, initial: string | undefined = 'correct-horse'): Promise<BrowserAuth> {
+  const auth = await BrowserAuth.create(credentials(store), 30)
+  if (initial !== undefined) await auth.setPasscode(initial)
+  return auth
 }
 
 /** Submit a passcode form, defaulting to the same-authority browser form. */
@@ -500,7 +505,7 @@ describe('BrowserAuth', () => {
     const invalidPayloads: unknown[] = [
       'not json',
       null,
-      { version: 2, authority: '127.0.0.1:3080', device: 'unknown-session' },
+      { version: 2, authority: '127.0.0.1:3080', device: 'unknown-session', issuedAt: 1, expiresAt: 2 },
       { version: 2, authority: 42, device: 'AAAAAAAAAAAAAAAA' },
       { version: 1, authority: '127.0.0.1:3080' },
     ]
@@ -509,6 +514,16 @@ describe('BrowserAuth', () => {
         cookie: signedCookie(store, name, payload),
       }))).toBe(false)
     }
+    const invalidDeviceBody = Buffer.from(JSON.stringify({
+      version: 3,
+      authority: '127.0.0.1:3080',
+      device: 'unknown-session',
+      issuedAt: 1,
+      expiresAt: 2,
+    }), 'utf8').toString('base64url')
+    expect(auth.isAuthenticated(request('/', '127.0.0.1:3080', {
+      cookie: signedBodyCookie(store, name, invalidDeviceBody, 'v3'),
+    }))).toBe(false)
   })
 
   it('stops verifying a session once its absolute lifetime has passed', async () => {
@@ -538,7 +553,7 @@ describe('BrowserAuth', () => {
     store.discardWrites = false
     expect(store).toMatchObject({ reads: 0, modifies: 3 })
 
-    await store.deleteRecord()
+    await store.deleteRecord('client-connection/browser-session')
     expect(auth.isAuthenticated(request('/', '127.0.0.1:3080', { cookie: first.cookie }))).toBe(true)
     await expect(exchange(auth)).rejects.toThrow(/record is missing/u)
     expect(store).toMatchObject({ reads: 0, modifies: 4 })
@@ -624,7 +639,7 @@ describe('passcode login', () => {
   const AUTHORITY = '192.168.1.162:9445'
 
   it('serves the passcode page, the no-passcode sign-in page, and keeps a POST plain', async () => {
-    const auth = await passcodeAuth(new RecordCredentials()).auth
+    const auth = await passcodeAuth(new RecordCredentials())
     const page = response()
     expect(await auth.authorizeIndex(request('/', AUTHORITY), page.value)).toBe(false)
     expect(page.state.status).toBe(401)
@@ -647,7 +662,7 @@ describe('passcode login', () => {
     // Without an owner passcode a browser gets the sign-in page; a form POST gets plain text.
     for (const bare of [
       await BrowserAuth.create(credentials(new RecordCredentials()), 30),
-      await passcodeAuth(new RecordCredentials(), '').auth,
+      await createAuth(new RecordCredentials()),
     ]) {
       const signIn = response()
       expect(await bare.authorizeIndex(request('/', AUTHORITY), signIn.value)).toBe(false)
@@ -678,16 +693,97 @@ describe('passcode login', () => {
     }
   })
 
+  it('stores a salted one-way verifier, survives restart, and clears it', async () => {
+    const store = new RecordCredentials()
+    const auth = await createAuth(store)
+    expect(await auth.passcodeSet()).toBe(false)
+    await auth.setPasscode('correct-horse')
+    expect(await auth.passcodeSet()).toBe(true)
+    const stored = store.records.get('client-connection/passcode-verifier')
+    expect(stored).toMatchObject({
+      kind: 'grant',
+      payload: { version: 1, algorithm: 'scrypt', n: 65_536, r: 8, p: 2, keyLength: 32 },
+    })
+    expect(JSON.stringify(stored)).not.toContain('correct-horse')
+    const firstPayload = stored?.kind === 'grant' && typeof stored.payload === 'object' && stored.payload !== null
+      ? stored.payload
+      : undefined
+    const firstSalt: unknown = firstPayload === undefined ? undefined : Reflect.get(firstPayload, 'salt')
+    expect(typeof firstSalt).toBe('string')
+
+    const restarted = await createAuth(store)
+    const allowed = response()
+    expect(await restarted.authorizeIndex(submit({
+      authority: AUTHORITY, passcode: 'correct-horse',
+    }), allowed.value)).toBe(false)
+    expect(allowed.state.status).toBe(303)
+
+    await auth.setPasscode('correct-horse')
+    const replaced = store.records.get('client-connection/passcode-verifier')
+    const replacedPayload = replaced?.kind === 'grant' && typeof replaced.payload === 'object' && replaced.payload !== null
+      ? replaced.payload
+      : undefined
+    const replacedSalt: unknown = replacedPayload === undefined ? undefined : Reflect.get(replacedPayload, 'salt')
+    expect(replacedSalt).not.toBe(firstSalt)
+
+    await auth.clearPasscode()
+    expect(await auth.passcodeSet()).toBe(false)
+    expect(store.records.has('client-connection/passcode-verifier')).toBe(false)
+  })
+
+  it('accepts a maximum-length percent-encoded passcode', async () => {
+    const store = new RecordCredentials()
+    const auth = await createAuth(store)
+    const passcode = 'é'.repeat(1_024)
+    await auth.setPasscode(passcode)
+    const allowed = response()
+    expect(await auth.authorizeIndex(submit({
+      authority: AUTHORITY, passcode,
+    }), allowed.value)).toBe(false)
+    expect(allowed.state.status).toBe(303)
+  })
+
+  it('rejects passcodes outside the fixed bounds and refuses a malformed verifier', async () => {
+    const store = new RecordCredentials()
+    const auth = await createAuth(store)
+    await expect(auth.setPasscode('short')).rejects.toThrow('passcode must be 12-1024 characters')
+    await expect(auth.setPasscode('x'.repeat(1_025))).rejects.toThrow('passcode must be 12-1024 characters')
+
+    const malformed = [
+      { kind: 'api-key', payload: undefined },
+      { kind: 'grant', payload: 'not-an-object' },
+      { kind: 'grant', payload: { version: 2, algorithm: 'scrypt', salt: 'bad', hash: 'bad', n: 65_536, r: 8, p: 2, keyLength: 32 } },
+      { kind: 'grant', payload: { version: 1, algorithm: 'scrypt', salt: 'bad', hash: 'bad', n: 65_536, r: 8, p: 2, keyLength: 32 } },
+    ] as const
+    for (const record of malformed) {
+      store.records.set('client-connection/passcode-verifier', record)
+      await expect(auth.passcodeSet()).rejects.toThrow('passcode verifier credential record is malformed')
+    }
+
+    store.discardWrites = true
+    await expect(auth.setPasscode('correct-horse')).rejects.toThrow('passcode verifier credential record was not created')
+  })
+
+  it('surfaces a key-derivation failure without writing a verifier', async () => {
+    const store = new RecordCredentials()
+    const auth = await createAuth(store)
+    scryptMock.mockImplementationOnce((_password, _salt, _keyLength, _options, callback) => {
+      callback(new Error('kdf failed'), Buffer.alloc(0))
+    })
+    await expect(auth.setPasscode('correct-horse')).rejects.toThrow('kdf failed')
+    expect(store.records.has('client-connection/passcode-verifier')).toBe(false)
+  })
+
   it('pairs a browser on the matching passcode and rejects malformed submissions', async () => {
     const store = new RecordCredentials()
-    const auth = await passcodeAuth(store).auth
+    const auth = await passcodeAuth(store)
 
     const submissions = [
       [{ passcode: 'wrong' }, 401, 'Incorrect passcode. Try again.'],
       [{ body: 'passcode=' }, 401, 'Incorrect passcode. Try again.'],
       [{ body: 'other=value' }, 400, 'The passcode form was not submitted correctly.'],
       [{ contentType: 'text/plain' }, 400, 'The passcode form was not submitted correctly.'],
-      [{ body: `passcode=${'a'.repeat(4_096)}` }, 400, 'The passcode form was not submitted correctly.'],
+      [{ body: `passcode=${'a'.repeat(20_000)}` }, 400, 'The passcode form was not submitted correctly.'],
     ] as const
     for (const [body, status, error] of submissions) {
       const denied = response()
@@ -697,6 +793,12 @@ describe('passcode login', () => {
       expect(denied.state.status).toBe(status)
       expect(denied.state.body).toContain(error)
     }
+
+    const head = response()
+    expect(await auth.authorizeIndex(request('/', AUTHORITY, { method: 'HEAD' }), head.value)).toBe(false)
+    expect(head.state.status).toBe(401)
+    expect(head.state.body).toBeUndefined()
+    expect(head.state.headers?.['content-security-policy']).toBe(LOGIN_CSP)
 
     // Neither a socket address nor an authority leaves only the fallback key.
     const unaddressed = response()
@@ -725,7 +827,7 @@ describe('passcode login', () => {
   it('blocks repeated failures per peer, reports the remaining wait, and resets on success', async () => {
     vi.useFakeTimers()
     vi.setSystemTime(new Date('2026-08-24T00:00:00.000Z'))
-    const auth = await passcodeAuth(new RecordCredentials()).auth
+    const auth = await passcodeAuth(new RecordCredentials())
     const blocked = '10.0.0.1'
     const other = '10.0.0.2'
 
@@ -786,10 +888,10 @@ describe('passcode login', () => {
       authority: AUTHORITY, remoteAddress: waiting, passcode: 'correct-horse',
     }), waited.value)).toBe(false)
     expect(waited.state.status).toBe(303)
-  })
+  }, 30_000)
 
   it('keeps a signed-in browser on the application without consulting the passcode', async () => {
-    const auth = await passcodeAuth(new RecordCredentials()).auth
+    const auth = await passcodeAuth(new RecordCredentials())
     const login = await exchange(auth)
     const allowed = response()
     expect(await auth.authorizeIndex(request('/', '127.0.0.1:3080', { cookie: login.cookie }), allowed.value)).toBe(true)

@@ -821,6 +821,24 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         description: 'Replace the pairing code, so previously shared links no longer pair new browsers while already paired browsers keep their sessions.',
         parameters: [],
       },
+      {
+        signature: 'passcodeSet(): Promise<boolean>',
+        description: 'Whether an owner passcode verifier is stored.',
+        parameters: [],
+        returns: 'true when a readable passcode verifier is configured.',
+      },
+      {
+        signature: 'setPasscode(passcode: string): Promise<void>',
+        description: 'Replace the owner passcode with a salt-and-scrypt verifier. The plaintext passcode is never persisted.',
+        parameters: [{ name: 'passcode', description: 'owner-chosen passcode, at least twelve characters.' }],
+        returns: 'fulfillment after the verifier is durable.',
+      },
+      {
+        signature: 'clearPasscode(): Promise<void>',
+        description: 'Remove the stored passcode verifier without revoking paired browsers.',
+        parameters: [],
+        returns: 'fulfillment after the record is removed.',
+      },
     ],
   },
   {
@@ -3670,6 +3688,31 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         description: 'Retrieve one URL through the selected provider. Resolves the provider at call time with the selection rules above; throws WebError when the capability cannot run. A non-2xx response is a result, not a throw.',
         parameters: [{ name: 'request', description: 'the URL plus retrieval options.' }, { name: 'signal', description: 'optional cancellation signal forwarded to the provider.' }],
         returns: 'the retrieval outcome; non-2xx responses resolve descriptively.',
+      },
+    ],
+  },
+  {
+    key: 'webAccessController',
+    summary: 'Host service backing the generated `ctx.remote.webAccess` namespace.',
+    description: 'Host service backing the generated `ctx.remote.webAccess` namespace. The passcode verifier and its hashing belong to Connection; this controller only transports the write-only facts a configuration page needs.',
+    methods: [
+      {
+        signature: '@Remote(\'status\') async status(): Promise<{ configured: boolean }>',
+        description: 'Report whether the owner has configured a Web login passcode.',
+        parameters: [],
+        returns: 'the presence fact only; the verifier never crosses the wire.',
+      },
+      {
+        signature: '@Remote(\'setPasscode\') async setPasscode(passcode: string): Promise<void>',
+        description: 'Replace the owner passcode with a one-way verifier.',
+        parameters: [{ name: 'passcode', description: 'owner-chosen passcode, at least twelve characters.' }],
+        returns: 'fulfillment after the verifier is durable.',
+      },
+      {
+        signature: '@Remote(\'clearPasscode\') async clearPasscode(): Promise<void>',
+        description: 'Remove the stored passcode verifier without revoking paired browsers.',
+        parameters: [],
+        returns: 'fulfillment after the record is removed.',
       },
     ],
   },
